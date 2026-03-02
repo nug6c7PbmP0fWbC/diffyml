@@ -200,8 +200,8 @@ func (f *CompactFormatter) formatDiff(sb *strings.Builder, diff Difference, opts
 func (f *CompactFormatter) formatValuesInline(sb *strings.Builder, diff Difference, opts *FormatOptions) {
 	switch diff.Type {
 	case DiffModified:
-		fromStr := formatValue(diff.From, opts)
-		toStr := formatValue(diff.To, opts)
+		fromStr := formatValue(diff.From)
+		toStr := formatValue(diff.To)
 
 		sb.WriteString(" : ")
 		if opts.Color {
@@ -220,7 +220,7 @@ func (f *CompactFormatter) formatValuesInline(sb *strings.Builder, diff Differen
 			sb.WriteString(colorReset)
 		}
 	case DiffAdded:
-		toStr := formatValue(diff.To, opts)
+		toStr := formatValue(diff.To)
 		sb.WriteString(" : ")
 		if opts.Color {
 			sb.WriteString(colorGreen)
@@ -230,7 +230,7 @@ func (f *CompactFormatter) formatValuesInline(sb *strings.Builder, diff Differen
 			sb.WriteString(colorReset)
 		}
 	case DiffRemoved:
-		fromStr := formatValue(diff.From, opts)
+		fromStr := formatValue(diff.From)
 		sb.WriteString(" : ")
 		if opts.Color {
 			sb.WriteString(colorRed)
@@ -246,12 +246,18 @@ func (f *CompactFormatter) formatValuesInline(sb *strings.Builder, diff Differen
 
 // formatValue converts a value to string.
 // Shows full values without truncation.
-func formatValue(val interface{}, opts *FormatOptions) string {
+// Structured types (*OrderedMap, map[string]interface{}, []interface{}) are
+// serialized to inline YAML instead of Go's default %v representation.
+func formatValue(val interface{}) string {
 	if val == nil {
 		return "<nil>"
 	}
 	if t, ok := val.(time.Time); ok {
 		return formatTimestamp(t)
+	}
+
+	if s, ok := marshalStructuredYAML(val); ok {
+		return strings.TrimSpace(s)
 	}
 
 	return fmt.Sprintf("%v", val)
@@ -338,15 +344,16 @@ func gitHubCommand(dt DiffType) (command, title string) {
 	}
 }
 
-// gitHubMessage returns the message body for a difference.
-func gitHubMessage(diff Difference) string {
+// diffDescription returns a human-readable description of a difference.
+// Shared by GitHub, GitLab, and Gitea formatters.
+func diffDescription(diff Difference) string {
 	switch diff.Type {
 	case DiffAdded:
-		return fmt.Sprintf("Added: %s = %v", diff.Path, diff.To)
+		return fmt.Sprintf("Added: %s = %s", diff.Path, formatValue(diff.To))
 	case DiffRemoved:
-		return fmt.Sprintf("Removed: %s = %v", diff.Path, diff.From)
+		return fmt.Sprintf("Removed: %s = %s", diff.Path, formatValue(diff.From))
 	case DiffModified:
-		return fmt.Sprintf("Modified: %s changed from %v to %v", diff.Path, diff.From, diff.To)
+		return fmt.Sprintf("Modified: %s changed from %s to %s", diff.Path, formatValue(diff.From), formatValue(diff.To))
 	default: // DiffOrderChanged
 		return fmt.Sprintf("Order changed: %s", diff.Path)
 	}
@@ -359,7 +366,7 @@ const gitHubAnnotationLimit = 10
 // FormatSingle renders a single difference in GitHub Actions format.
 func (f *GitHubFormatter) FormatSingle(diff Difference, opts *FormatOptions) string {
 	cmd, title := gitHubCommand(diff.Type)
-	msg := gitHubMessage(diff)
+	msg := diffDescription(diff)
 	return fmt.Sprintf("::%s title=%s::%s\n", cmd, title, msg)
 }
 
@@ -384,9 +391,8 @@ func (f *GitHubFormatter) Format(diffs []Difference, opts *FormatOptions) string
 
 	for _, diff := range diffs {
 		cmd, title := gitHubCommand(diff.Type)
-		msg := gitHubMessage(diff)
 		if counts[cmd] < gitHubAnnotationLimit {
-			gitHubWriteCommand(&sb, cmd, title, msg, filePath)
+			gitHubWriteCommand(&sb, cmd, title, diffDescription(diff), filePath)
 			counts[cmd]++
 		} else {
 			omitted[cmd]++
@@ -429,9 +435,8 @@ func (f *GitHubFormatter) FormatAll(groups []DiffGroup, opts *FormatOptions) str
 	for _, group := range groups {
 		for _, diff := range group.Diffs {
 			cmd, title := gitHubCommand(diff.Type)
-			msg := gitHubMessage(diff)
 			if counts[cmd] < gitHubAnnotationLimit {
-				gitHubWriteCommand(&sb, cmd, title, msg, group.FilePath)
+				gitHubWriteCommand(&sb, cmd, title, diffDescription(diff), group.FilePath)
 				counts[cmd]++
 			} else {
 				omitted[cmd]++
@@ -486,23 +491,9 @@ func gitLabFingerprint(filePath, description string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// gitLabDescription returns the description string for a difference.
-func gitLabDescription(diff Difference) string {
-	switch diff.Type {
-	case DiffAdded:
-		return fmt.Sprintf("Added: %s = %v", diff.Path, diff.To)
-	case DiffRemoved:
-		return fmt.Sprintf("Removed: %s = %v", diff.Path, diff.From)
-	case DiffModified:
-		return fmt.Sprintf("Modified: %s changed from %v to %v", diff.Path, diff.From, diff.To)
-	default: // DiffOrderChanged
-		return fmt.Sprintf("Order changed: %s", diff.Path)
-	}
-}
-
 // FormatSingle renders a single difference in GitLab CI JSON format (without array wrapper).
 func (f *GitLabFormatter) FormatSingle(diff Difference, opts *FormatOptions) string {
-	desc := gitLabDescription(diff)
+	desc := diffDescription(diff)
 	return fmt.Sprintf(
 		`{"description": %q, "check_name": %q, "fingerprint": %q, "severity": %q, "location": {"path": %q, "lines": {"begin": 1}}}`+"\n",
 		desc, gitLabCheckName(diff.Type), gitLabFingerprint("", desc), gitLabSeverity(diff.Type), diff.Path)
@@ -522,7 +513,7 @@ func (f *GitLabFormatter) Format(diffs []Difference, opts *FormatOptions) string
 	sb.WriteString("[\n")
 
 	for i, diff := range diffs {
-		desc := gitLabDescription(diff)
+		desc := diffDescription(diff)
 		locationPath := opts.FilePath
 		if locationPath == "" {
 			locationPath = diff.Path
@@ -560,7 +551,7 @@ func (f *GitLabFormatter) FormatAll(groups []DiffGroup, _ *FormatOptions) string
 	idx := 0
 	for _, group := range groups {
 		for _, diff := range group.Diffs {
-			baseDesc := gitLabDescription(diff)
+			baseDesc := diffDescription(diff)
 			displayDesc := fmt.Sprintf("[%s] %s", group.FilePath, baseDesc)
 			fmt.Fprintf(&sb,
 				`  {"description": %q, "check_name": %q, "fingerprint": %q, "severity": %q, "location": {"path": %q, "lines": {"begin": 1}}}`,
