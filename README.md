@@ -1,6 +1,6 @@
 # diffyml
 
-Structural diff for YAML files. Understands YAML semantics and detects Kubernetes resources.
+The fastest, most correct YAML diff tool — in a single-dependency binary.
 
 [![Tests](https://github.com/szhekpisov/diffyml/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/szhekpisov/diffyml/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/szhekpisov/diffyml/branch/main/graph/badge.svg)](https://codecov.io/gh/szhekpisov/diffyml)
@@ -9,16 +9,28 @@ Structural diff for YAML files. Understands YAML semantics and detects Kubernete
 [![Benchmark](https://github.com/szhekpisov/diffyml/actions/workflows/benchmark.yml/badge.svg?branch=main)](https://github.com/szhekpisov/diffyml/actions/workflows/benchmark.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/szhekpisov/diffyml/badge)](https://scorecard.dev/viewer/?uri=github.com/szhekpisov/diffyml)
 
+## Why diffyml?
+
+**Fastest at scale.** Lowest memory footprint at every file size and near-linear scaling. See [PERFORMANCE.md](PERFORMANCE.md) for methodology and results.
+
+**One dependency, zero surprises.** A single runtime dependency ([yaml.v3](https://github.com/yaml/go-yaml)) and pure Go stdlib. Minimal attack surface, auditable in minutes.
+
+**Gets YAML right.** Dotted keys, type preservation, mixed-type lists, nil values — concrete edge cases other tools get wrong. diffyml treats YAML semantics as first-class, not an afterthought.
+
+## Kubernetes Intelligence
+
+diffyml auto-detects Kubernetes resources and matches them by `apiVersion`, `kind`, and `metadata.name` — so diffs stay meaningful even when document order changes.
+
+- **Rename detection** — detects renamed/moved resources by content similarity (e.g., kustomize `configMapGenerator` hash-suffix changes like `app-config-abc123` → `app-config-def456`) and shows field-level diffs instead of bulk add/remove
+- **API migration support** — `--ignore-api-version` drops `apiVersion` from the matching key, so an upgrade from `apps/v1beta1` to `apps/v1` shows field-level diffs instead of a remove + add
+- **Drop-in for kubectl** — compare two directories of YAML files and use as `KUBECTL_EXTERNAL_DIFF` with no extra setup
+
 ## Features
 
-- **Minimal dependencies** — single runtime dependency ([yaml.v3](https://github.com/yaml/go-yaml)); pure Go stdlib otherwise. Small attack surface, fast by design ([benchmarks](#performance))
-- **Kubernetes-aware** — auto-detects and matches resources by apiVersion, kind, and metadata; optional apiVersion-agnostic matching for API migrations
-- **Rename detection** — detects renamed/moved Kubernetes resources by content similarity (e.g., kustomize configMapGenerator hash-suffix changes) and shows field-level diffs instead of bulk add/remove
 - **6 output formats** — detailed, compact, brief, GitHub, GitLab, Gitea
 - **Path filtering** — include/exclude paths with exact match or regex
 - **Remote files** — compare directly from HTTP/HTTPS URLs
 - **Certificate inspection** — inspects and compares embedded x509 certificates
-- **Directory comparison** — compare two directories of YAML files; works as `KUBECTL_EXTERNAL_DIFF`
 - **Chroot navigation** — focus comparison on a specific YAML subtree
 - ⭐ **AI-powered summaries** ⭐ — natural language summaries of changes via Anthropic API
 
@@ -67,6 +79,31 @@ diffyml -s deployment-old.yaml deployment-new.yaml
 export KUBECTL_EXTERNAL_DIFF="diffyml --omit-header --set-exit-code"
 kubectl diff -f manifests/
 ```
+
+## Library Usage
+
+diffyml can be used as a Go library for programmatic YAML comparison.
+
+```go
+import "github.com/szhekpisov/diffyml/pkg/diffyml"
+
+// Compare two YAML documents
+from, _ := diffyml.LoadContent("old.yaml")
+to, _   := diffyml.LoadContent("new.yaml")
+
+diffs, err := diffyml.Compare(from, to, &diffyml.Options{
+    DetectKubernetes: true,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+// Format the differences
+formatter, _ := diffyml.FormatterByName("compact")
+fmt.Print(formatter.Format(diffs, diffyml.DefaultFormatOptions()))
+```
+
+See the [package documentation](https://pkg.go.dev/github.com/szhekpisov/diffyml/pkg/diffyml) for the full API reference.
 
 ## Usage
 
@@ -244,35 +281,6 @@ Every push and PR is checked by:
 
 Core packages enforce 95–100% test coverage thresholds in CI. [Mutation testing](https://github.com/go-gremlins/gremlins) validates that tests catch real bugs, not just exercise code paths.
 
-## Performance
-
-Benchmarked against 4 Go-based YAML diff tools using [hyperfine](https://github.com/sharkdp/hyperfine) (20 runs, 5 warmup). Environment: Apple M1 Pro, macOS, Go 1.26.1.
-
-| File size | diffyml | [dyff](https://github.com/homeport/dyff) | [semihbkgr/yamldiff](https://github.com/semihbkgr/yamldiff) | [sters/yaml-diff](https://github.com/sters/yaml-diff) | [sahilm/yamldiff](https://github.com/sahilm/yamldiff) | diff |
-|-----------|--------:|-----:|----------:|------:|-------:|-----:|
-| ~70 lines | 5.7 ms | 15.3 ms | 3.9 ms | 4.0 ms | **3.7 ms** | 2.2 ms |
-| ~530 lines | 6.3 ms | 29.2 ms | **5.2 ms** | 11.5 ms | 16.1 ms | 2.6 ms |
-| ~5K lines | **22.3 ms** | 173.8 ms | 27.9 ms | 984 ms | 1,370 ms | 6.2 ms |
-| ~50K lines | **152.3 ms** | 3,647 ms | 245.7 ms | — | — | 46.2 ms |
-
-Lowest memory footprint at every size (18.4 MB at 5K lines vs 21–326 MB for alternatives). See [PERFORMANCE.md](PERFORMANCE.md) for full methodology and results.
-
-<details>
-<summary>Reproduce benchmarks</summary>
-
-```bash
-# Full benchmark (small, medium, large)
-make bench-compare
-
-# Include xlarge (sters/yaml-diff and sahilm/yamldiff are auto-excluded at this size)
-bash bench/compare/run.sh --sizes small,medium,large,xlarge
-
-# Quick check with fewer runs
-bash bench/compare/run.sh --runs 3
-```
-
-</details>
-
 ## Contributing
 
 Contributions welcome! [Open an issue](https://github.com/szhekpisov/diffyml/issues) for bugs or feature requests.
@@ -304,7 +312,7 @@ pre-commit install
 make test           # run all tests
 make ci             # full CI pipeline locally (fmt + vet + test + coverage + security)
 make bench          # run benchmarks
-make bench-compare  # compare against alternative tools
+make bench-compare  # compare against alternative tools (see PERFORMANCE.md)
 make coverage       # generate HTML coverage report
 make mutation       # run mutation testing (requires gremlins)
 ```
@@ -319,7 +327,7 @@ make mutation       # run mutation testing (requires gremlins)
 
 ## Acknowledgments
 
-diffyml is inspired by [dyff](https://github.com/homeport/dyff) by [HQS Quantum Simulations](https://github.com/homeport).
+This project is heavily inspired by [dyff](https://github.com/homeport/dyff), and it wouldn't be possible without the hard work of the maintainers and contributors of that project.
 
 ## License
 
