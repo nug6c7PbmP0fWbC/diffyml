@@ -1,21 +1,42 @@
 # diffyml
 
-The fastest, most correct YAML diff tool — in a single-dependency binary.
+A fast, structural YAML diff tool with built-in Kubernetes intelligence. One dependency, minimal attack surface, native CI annotations for GitHub, GitLab, and Gitea.
 
-[![Tests](https://github.com/szhekpisov/diffyml/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/szhekpisov/diffyml/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/szhekpisov/diffyml/branch/main/graph/badge.svg)](https://codecov.io/gh/szhekpisov/diffyml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/szhekpisov/diffyml)](https://goreportcard.com/report/github.com/szhekpisov/diffyml)
-[![Security & Static Analysis](https://github.com/szhekpisov/diffyml/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/szhekpisov/diffyml/actions/workflows/security.yml)
-[![Benchmark](https://github.com/szhekpisov/diffyml/actions/workflows/benchmark.yml/badge.svg?branch=main)](https://github.com/szhekpisov/diffyml/actions/workflows/benchmark.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/szhekpisov/diffyml/badge)](https://scorecard.dev/viewer/?uri=github.com/szhekpisov/diffyml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/szhekpisov/diffyml)](https://goreportcard.com/report/github.com/szhekpisov/diffyml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/szhekpisov/diffyml.svg)](https://pkg.go.dev/github.com/szhekpisov/diffyml)
+[![codecov](https://codecov.io/gh/szhekpisov/diffyml/branch/main/graph/badge.svg)](https://codecov.io/gh/szhekpisov/diffyml)
+[![Release](https://img.shields.io/github/v/release/szhekpisov/diffyml)](https://github.com/szhekpisov/diffyml/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/szhekpisov/diffyml/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/szhekpisov/diffyml/actions/workflows/test.yml)
+[![Security & Static Analysis](https://github.com/szhekpisov/diffyml/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/szhekpisov/diffyml/actions/workflows/security.yml)
+<img src="doc/demo.png" alt="diffyml output" width="600">
+
+diffyml compares YAML files and shows meaningful, structured differences — not line-by-line text diffs.
 
 ## Why diffyml?
 
-**Fastest at scale.** Lowest memory footprint at every file size and near-linear scaling. See [PERFORMANCE.md](PERFORMANCE.md) for methodology and results.
+**Fastest at scale.** 7.7x faster than [dyff](https://github.com/homeport/dyff) on 78 KB files, 21x faster on 780 KB files, with the lowest memory footprint among YAML-aware tools at scale. Near-linear scaling. See [PERFORMANCE.md](PERFORMANCE.md) for methodology and results.
 
 **One dependency, zero surprises.** A single runtime dependency ([yaml.v3](https://github.com/yaml/go-yaml)) and pure Go stdlib. Minimal attack surface, auditable in minutes.
 
 **Gets YAML right.** Dotted keys, type preservation, mixed-type lists, nil values — concrete edge cases other tools get wrong. diffyml treats YAML semantics as first-class, not an afterthought.
+
+## How It Compares
+
+| Feature | diffyml | dyff | plain `diff` |
+|---------|---------|------|------------|
+| YAML-aware (structural diff) | Yes | Yes | No (line-based) |
+| Kubernetes resource matching | By apiVersion + kind + name | By document position | No |
+| Rename detection | Yes (content similarity) | No | No |
+| API version migration | Yes (`--ignore-api-version`) | No | No |
+| CI annotation formats | 3 (GitHub, GitLab, Gitea) | 0 | 0 |
+| Runtime dependencies | 1 (yaml.v3) | 20+ | 0 |
+| Directory comparison | Yes | No | Yes |
+| Performance (78 KB) | 20 ms | 156 ms (7.7x slower) | 7 ms |
+| Performance (780 KB) | 151 ms | 3,213 ms (21x slower) | 45 ms |
+
+Comparison based on dyff v1.9 and diffyml v1.5. See [PERFORMANCE.md](PERFORMANCE.md) for benchmark methodology. [Open an issue](https://github.com/szhekpisov/diffyml/issues) if anything is outdated.
 
 ## Kubernetes Intelligence
 
@@ -24,15 +45,6 @@ diffyml auto-detects Kubernetes resources and matches them by `apiVersion`, `kin
 - **Rename detection** — detects renamed/moved resources by content similarity (e.g., kustomize `configMapGenerator` hash-suffix changes like `app-config-abc123` → `app-config-def456`) and shows field-level diffs instead of bulk add/remove
 - **API migration support** — `--ignore-api-version` drops `apiVersion` from the matching key, so an upgrade from `apps/v1beta1` to `apps/v1` shows field-level diffs instead of a remove + add
 - **Drop-in for kubectl** — compare two directories of YAML files and use as `KUBECTL_EXTERNAL_DIFF` with no extra setup
-
-## Features
-
-- **6 output formats** — detailed, compact, brief, GitHub, GitLab, Gitea
-- **Path filtering** — include/exclude paths with exact match or regex
-- **Remote files** — compare directly from HTTP/HTTPS URLs
-- **Certificate inspection** — inspects and compares embedded x509 certificates
-- **Chroot navigation** — focus comparison on a specific YAML subtree
-- ⭐ **AI-powered summaries** ⭐ — natural language summaries of changes via Anthropic API
 
 ## Installation
 
@@ -75,35 +87,20 @@ diffyml local.yaml https://example.com/remote.yaml
 # Use in CI — exit code 1 when differences found
 diffyml -s deployment-old.yaml deployment-new.yaml
 
-# Use as kubectl external diff provider
+# Use as kubectl external diff provider:
 export KUBECTL_EXTERNAL_DIFF="diffyml --omit-header --set-exit-code"
-kubectl diff -f manifests/
 ```
 
-## Library Usage
+<img src="doc/kubectl-demo.png" alt="kubectl diff with diffyml" width="600">
 
-diffyml can be used as a Go library for programmatic YAML comparison.
+## Features
 
-```go
-import "github.com/szhekpisov/diffyml/pkg/diffyml"
-
-// Compare two YAML documents
-from, _ := diffyml.LoadContent("old.yaml")
-to, _   := diffyml.LoadContent("new.yaml")
-
-diffs, err := diffyml.Compare(from, to, &diffyml.Options{
-    DetectKubernetes: true,
-})
-if err != nil {
-    log.Fatal(err)
-}
-
-// Format the differences
-formatter, _ := diffyml.FormatterByName("compact")
-fmt.Print(formatter.Format(diffs, diffyml.DefaultFormatOptions()))
-```
-
-See the [package documentation](https://pkg.go.dev/github.com/szhekpisov/diffyml/pkg/diffyml) for the full API reference.
+- **6 output formats** — detailed, compact, brief, GitHub, GitLab, Gitea
+- **Path filtering** — include/exclude paths with exact match or regex
+- **Remote files** — compare directly from HTTP/HTTPS URLs
+- **Certificate inspection** — inspects and compares embedded x509 certificates
+- **Chroot navigation** — focus comparison on a specific YAML subtree
+- ⭐ **AI-powered summaries** ⭐ — natural language summaries of changes via Anthropic API
 
 ## Usage
 
@@ -124,18 +121,22 @@ diffyml [flags] <from> <to>
 
 ### Kubernetes Support
 
-Kubernetes resources are automatically detected and matched by `apiVersion`, `kind`, and `metadata.name`. When resources cannot be matched by identifier (e.g., kustomize `configMapGenerator` hash-suffix changes like `app-config-abc123` → `app-config-def456`), diffyml compares unmatched documents by content similarity and pairs those above a 60% threshold, showing field-level diffs instead of bulk add/remove. Use `--detect-renames=false` to disable this behavior.
+Resources are auto-detected and matched by `apiVersion` + `kind` + `metadata.name`, so diffs stay meaningful even when document order changes.
 
-Use `--ignore-api-version` to drop `apiVersion` from the matching key — resources are paired by `kind` + `name` only, so an API migration (e.g. `apps/v1beta1` → `apps/v1`) shows field-level diffs instead of a remove + add. Use `--detect-kubernetes=false` to disable K8s-aware matching entirely and compare documents by position.
+**Rename detection** — when resources can't be matched by identifier (e.g., kustomize `configMapGenerator` hash-suffix changes like `app-config-abc123` → `app-config-def456`), diffyml pairs unmatched documents by content similarity (60% threshold) and shows field-level diffs instead of bulk add/remove. Disable with `--detect-renames=false`.
+
+**API migration** — `--ignore-api-version` drops `apiVersion` from the matching key, so an upgrade from `apps/v1beta1` to `apps/v1` shows field-level diffs instead of a remove + add.
+
+**Opt out** — `--detect-kubernetes=false` disables K8s-aware matching entirely and compares documents by position.
 
 ```bash
 # Compare two Kubernetes manifests
 diffyml manifests-v1.yaml manifests-v2.yaml
 
-# Ignore apiVersion when matching — useful for API migrations (e.g. apps/v1beta1 → apps/v1)
+# API migration — match by kind + name only
 diffyml --ignore-api-version manifests-v1.yaml manifests-v2.yaml
 
-# Disable Kubernetes detection — compare documents by position
+# Disable Kubernetes detection
 diffyml --detect-kubernetes=false file1.yaml file2.yaml
 ```
 
@@ -265,11 +266,37 @@ The summary is appended after the standard diff output. If the API call fails, a
 
 </details>
 
+## Library Usage
+
+diffyml can be used as a Go library for programmatic YAML comparison.
+
+```go
+import "github.com/szhekpisov/diffyml/pkg/diffyml"
+
+// Compare two YAML documents
+from, _ := diffyml.LoadContent("old.yaml")
+to, _   := diffyml.LoadContent("new.yaml")
+
+diffs, err := diffyml.Compare(from, to, &diffyml.Options{
+    DetectKubernetes: true,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+// Format the differences
+formatter, _ := diffyml.FormatterByName("compact")
+fmt.Print(formatter.Format(diffs, diffyml.DefaultFormatOptions()))
+```
+
+See the [package documentation](https://pkg.go.dev/github.com/szhekpisov/diffyml/pkg/diffyml) for the full API reference.
+
 ## Code Quality
 
 Every push and PR is checked by:
 
 - [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) — known vulnerability detection
+- [zizmor](https://github.com/zizmorcore/zizmor-action) — GitHub Actions workflow security scanning
 - [golangci-lint](https://golangci-lint.run/) running:
   [errcheck](https://github.com/kisielk/errcheck),
   [gocritic](https://github.com/go-critic/go-critic),
@@ -279,7 +306,7 @@ Every push and PR is checked by:
   [misspell](https://github.com/client9/misspell),
   [staticcheck](https://staticcheck.dev/) (all checks except style conventions)
 
-Core packages enforce 95–100% test coverage thresholds in CI. [Mutation testing](https://github.com/go-gremlins/gremlins) validates that tests catch real bugs, not just exercise code paths.
+1,200+ tests (unit, e2e, fuzz, property-based), 98.9% code coverage, 100% [mutation testing](https://github.com/go-gremlins/gremlins) efficacy (578/578 mutants killed). CI enforces a 98% coverage floor.
 
 ## Contributing
 
@@ -302,7 +329,7 @@ pre-commit install
 |------|---------------|
 | `gofmt` | Code formatting |
 | `go vet` | Static analysis |
-| `check-coverage` | Coverage thresholds (100% parser, 100% ordered_map, 95% kubernetes) |
+| `check-coverage` | Coverage threshold (98% overall) |
 | `govulncheck` | Known vulnerabilities |
 | `golangci-lint` | 7 linters (errcheck, gocritic, gosec, govet, ineffassign, misspell, staticcheck) |
 
