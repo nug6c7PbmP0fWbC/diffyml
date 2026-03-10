@@ -19,7 +19,7 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
@@ -48,6 +48,36 @@ signs:
       - "${artifact}"
       - "--yes"
     artifacts: sbom
+
+brews:
+  - repository:
+      owner: szhekpisov
+      name: homebrew-diffyml
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: github-actions[bot]
+      email: github-actions[bot]@users.noreply.github.com
+    directory: Formula
+    homepage: "https://github.com/szhekpisov/diffyml"
+    description: "Structural diff tool for YAML files"
+    license: "MIT"
+    skip_upload: auto
+    commit_msg_template: "Update diffyml to {{ .Version }}"
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/diffyml --version")
+
+      (testpath/"file1.yaml").write <<~YAML
+        name: test
+        value: 1
+      YAML
+
+      (testpath/"file2.yaml").write <<~YAML
+        name: test
+        value: 2
+      YAML
+
+      output = shell_output("#{bin}/diffyml #{testpath}/file1.yaml #{testpath}/file2.yaml")
+      assert_match "value", output
 
 changelog:
   sort: asc
