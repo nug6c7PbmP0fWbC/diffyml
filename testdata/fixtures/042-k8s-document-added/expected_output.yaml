@@ -1,9 +1,10 @@
 Found one difference
 
 (document)
-  + one list entry added:
-    - apiVersion: v1
-      kind: Service
-      metadata:
-        name: y
+  + one document added:
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: y
 
