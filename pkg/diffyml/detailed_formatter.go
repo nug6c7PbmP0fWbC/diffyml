@@ -91,15 +91,15 @@ func (f *DetailedFormatter) formatPathHeading(sb *strings.Builder, path string, 
 		}
 	} else if idx, ok := parseBareDocIndex(path); ok {
 		if isMultiDoc {
-			heading = fmt.Sprintf("(document %d)", idx+1)
+			heading = fmt.Sprintf("(root level) (document %d)", idx)
 		} else {
 			heading = k8sDocumentPath
 		}
 	} else if idx, rest, ok := parseDocIndexPrefix(path); ok {
 		if opts.UseGoPatchStyle {
-			heading = fmt.Sprintf("%d:%s", idx, convertToGoPatchPath(rest))
+			heading = fmt.Sprintf("%s (document %d)", convertToGoPatchPath(rest), idx)
 		} else {
-			heading = fmt.Sprintf("%d:%s", idx, rest)
+			heading = fmt.Sprintf("%s (document %d)", rest, idx)
 		}
 	} else if opts.UseGoPatchStyle {
 		heading = convertToGoPatchPath(path)
