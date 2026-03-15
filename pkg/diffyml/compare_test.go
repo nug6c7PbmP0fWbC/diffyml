@@ -344,14 +344,21 @@ root:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "root.nested.newkey" {
-					t.Errorf("expected path 'root.nested.newkey', got '%s'", diffs[0].Path)
+				if diffs[0].Path.String() != "root.nested" {
+					t.Errorf("expected path 'root.nested', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffAdded {
 					t.Errorf("expected DiffAdded, got %v", diffs[0].Type)
 				}
-				if diffs[0].To != "newvalue" {
-					t.Errorf("expected To='newvalue', got %v", diffs[0].To)
+				om, ok := diffs[0].To.(*diffyml.OrderedMap)
+				if !ok {
+					t.Fatalf("expected To to be *OrderedMap, got %T", diffs[0].To)
+				}
+				if len(om.Keys) != 1 || om.Keys[0] != "newkey" {
+					t.Errorf("expected OrderedMap with key 'newkey', got keys %v", om.Keys)
+				}
+				if om.Values["newkey"] != "newvalue" {
+					t.Errorf("expected OrderedMap value 'newvalue', got %v", om.Values["newkey"])
 				}
 			},
 		},
@@ -372,14 +379,21 @@ root:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "root.nested.oldkey" {
-					t.Errorf("expected path 'root.nested.oldkey', got '%s'", diffs[0].Path)
+				if diffs[0].Path.String() != "root.nested" {
+					t.Errorf("expected path 'root.nested', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffRemoved {
 					t.Errorf("expected DiffRemoved, got %v", diffs[0].Type)
 				}
-				if diffs[0].From != "oldvalue" {
-					t.Errorf("expected From='oldvalue', got %v", diffs[0].From)
+				om, ok := diffs[0].From.(*diffyml.OrderedMap)
+				if !ok {
+					t.Fatalf("expected From to be *OrderedMap, got %T", diffs[0].From)
+				}
+				if len(om.Keys) != 1 || om.Keys[0] != "oldkey" {
+					t.Errorf("expected OrderedMap with key 'oldkey', got keys %v", om.Keys)
+				}
+				if om.Values["oldkey"] != "oldvalue" {
+					t.Errorf("expected OrderedMap value 'oldvalue', got %v", om.Values["oldkey"])
 				}
 			},
 		},
@@ -403,7 +417,7 @@ level1:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "level1.level2.level3.level4.value" {
+				if diffs[0].Path.String() != "level1.level2.level3.level4.value" {
 					t.Errorf("expected path 'level1.level2.level3.level4.value', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffModified {
@@ -453,23 +467,31 @@ config:
 	}
 	var hasModified, hasRemoved, hasAdded bool
 	for _, d := range diffs {
-		switch d.Path {
-		case "config.key1":
-			hasModified = d.Type == diffyml.DiffModified
-		case "config.key2":
-			hasRemoved = d.Type == diffyml.DiffRemoved
-		case "config.key4":
-			hasAdded = d.Type == diffyml.DiffAdded
+		switch {
+		case d.Path.String() == "config.key1" && d.Type == diffyml.DiffModified:
+			hasModified = true
+		case d.Path.String() == "config" && d.Type == diffyml.DiffRemoved:
+			if om, ok := d.From.(*diffyml.OrderedMap); ok {
+				if _, exists := om.Values["key2"]; exists {
+					hasRemoved = true
+				}
+			}
+		case d.Path.String() == "config" && d.Type == diffyml.DiffAdded:
+			if om, ok := d.To.(*diffyml.OrderedMap); ok {
+				if _, exists := om.Values["key4"]; exists {
+					hasAdded = true
+				}
+			}
 		}
 	}
 	if !hasModified {
 		t.Error("expected modified diff for config.key1")
 	}
 	if !hasRemoved {
-		t.Error("expected removed diff for config.key2")
+		t.Error("expected removed diff for config (key2 wrapped in OrderedMap)")
 	}
 	if !hasAdded {
-		t.Error("expected added diff for config.key4")
+		t.Error("expected added diff for config (key4 wrapped in OrderedMap)")
 	}
 }
 
@@ -493,8 +515,15 @@ func TestCompare_MapEdgeCases(t *testing.T) {
 				if diffs[0].Type != diffyml.DiffAdded {
 					t.Errorf("expected DiffAdded, got %v", diffs[0].Type)
 				}
-				if diffs[0].Path != "data.key" {
-					t.Errorf("expected path 'data.key', got '%s'", diffs[0].Path)
+				if diffs[0].Path.String() != "data" {
+					t.Errorf("expected path 'data', got '%s'", diffs[0].Path)
+				}
+				om, ok := diffs[0].To.(*diffyml.OrderedMap)
+				if !ok {
+					t.Fatalf("expected To to be *OrderedMap, got %T", diffs[0].To)
+				}
+				if len(om.Keys) != 1 || om.Keys[0] != "key" {
+					t.Errorf("expected OrderedMap with key 'key', got keys %v", om.Keys)
 				}
 			},
 		},
@@ -509,8 +538,15 @@ func TestCompare_MapEdgeCases(t *testing.T) {
 				if diffs[0].Type != diffyml.DiffRemoved {
 					t.Errorf("expected DiffRemoved, got %v", diffs[0].Type)
 				}
-				if diffs[0].Path != "data.key" {
-					t.Errorf("expected path 'data.key', got '%s'", diffs[0].Path)
+				if diffs[0].Path.String() != "data" {
+					t.Errorf("expected path 'data', got '%s'", diffs[0].Path)
+				}
+				om, ok := diffs[0].From.(*diffyml.OrderedMap)
+				if !ok {
+					t.Fatalf("expected From to be *OrderedMap, got %T", diffs[0].From)
+				}
+				if len(om.Keys) != 1 || om.Keys[0] != "key" {
+					t.Errorf("expected OrderedMap with key 'key', got keys %v", om.Keys)
 				}
 			},
 		},
@@ -729,7 +765,7 @@ items:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "items.2" {
+				if diffs[0].Path.String() != "items.2" {
 					t.Errorf("expected path 'items.2', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffAdded {
@@ -757,7 +793,7 @@ items:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "items.2" {
+				if diffs[0].Path.String() != "items.2" {
 					t.Errorf("expected path 'items.2', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffRemoved {
@@ -816,7 +852,7 @@ users:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "users.alice.age" {
+				if diffs[0].Path.String() != "users.alice.age" {
 					t.Errorf("expected path 'users.alice.age', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffModified {
@@ -843,7 +879,7 @@ config:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "config.servers.2" {
+				if diffs[0].Path.String() != "config.servers.2" {
 					t.Errorf("expected path 'config.servers.2', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffAdded {
@@ -955,7 +991,7 @@ root:
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "root.level1.level2.items.1" {
+				if diffs[0].Path.String() != "root.level1.level2.items.1" {
 					t.Errorf("expected path 'root.level1.level2.items.1', got '%s'", diffs[0].Path)
 				}
 			},
@@ -996,7 +1032,7 @@ func TestCompare_ListEdgeCases(t *testing.T) {
 				if len(diffs) != 1 {
 					t.Fatalf("expected 1 diff, got %d", len(diffs))
 				}
-				if diffs[0].Path != "data.2" {
+				if diffs[0].Path.String() != "data.2" {
 					t.Errorf("expected path 'data.2', got '%s'", diffs[0].Path)
 				}
 				if diffs[0].Type != diffyml.DiffModified {
@@ -1582,7 +1618,7 @@ func TestCompare_NonComparableIdentifier_NoPanicAndDiffs(t *testing.T) {
 	if len(diffs) != 1 {
 		t.Fatalf("expected 1 diff, got %d", len(diffs))
 	}
-	if diffs[0].Path != "items.0.value" {
+	if diffs[0].Path.String() != "items.0.value" {
 		t.Fatalf("expected diff path items.0.value, got %q", diffs[0].Path)
 	}
 	if diffs[0].Type != diffyml.DiffModified {
@@ -1611,7 +1647,7 @@ func TestCompare_MixedIdentifierAndNonIdentifier_ReportsRemoval(t *testing.T) {
 	if diffs[0].Type != diffyml.DiffRemoved {
 		t.Fatalf("expected DiffRemoved, got %v", diffs[0].Type)
 	}
-	if diffs[0].Path != "items.1" {
+	if diffs[0].Path.String() != "items.1" {
 		t.Fatalf("expected diff path items.1, got %q", diffs[0].Path)
 	}
 }
@@ -1653,7 +1689,7 @@ name: second`)
 	// Second document in from has no counterpart in to → DiffModified (from=doc, to=nil)
 	hasSecondDocDiff := false
 	for _, d := range diffs {
-		if strings.HasPrefix(d.Path, "[1]") {
+		if strings.HasPrefix(d.Path.String(), "[1]") {
 			hasSecondDocDiff = true
 		}
 	}
@@ -1747,13 +1783,13 @@ m: 30`)
 		t.Fatalf("expected 3 diffs, got %d", len(diffs))
 	}
 	// Diffs should follow source order: z, a, m — NOT alphabetical a, m, z
-	if diffs[0].Path != "z" {
+	if diffs[0].Path.String() != "z" {
 		t.Errorf("expected first diff path 'z', got %q", diffs[0].Path)
 	}
-	if diffs[1].Path != "a" {
+	if diffs[1].Path.String() != "a" {
 		t.Errorf("expected second diff path 'a', got %q", diffs[1].Path)
 	}
-	if diffs[2].Path != "m" {
+	if diffs[2].Path.String() != "m" {
 		t.Errorf("expected third diff path 'm', got %q", diffs[2].Path)
 	}
 }
@@ -1769,7 +1805,7 @@ func TestCompare_ListEntryAtIndex9(t *testing.T) {
 	if len(diffs) != 1 {
 		t.Fatalf("expected 1 diff, got %d", len(diffs))
 	}
-	if diffs[0].Path != "items.9" {
+	if diffs[0].Path.String() != "items.9" {
 		t.Errorf("expected path 'items.9', got %q", diffs[0].Path)
 	}
 }
@@ -1788,13 +1824,20 @@ newroot: added`)
 	if len(diffs) < 2 {
 		t.Fatalf("expected at least 2 diffs, got %d", len(diffs))
 	}
-	// Source path (existing.nested) comes before target-only addition (newroot)
-	if diffs[0].Type != diffyml.DiffModified || diffs[0].Path != "existing.nested" {
-		t.Errorf("expected first diff to be modification 'existing.nested', got type=%v path=%q",
+	// Root-level addition (empty parent path) comes before nested modification
+	if diffs[0].Type != diffyml.DiffAdded || diffs[0].Path.String() != "" {
+		t.Errorf("expected first diff to be addition at root (empty path), got type=%v path=%q",
 			diffs[0].Type, diffs[0].Path)
 	}
-	if diffs[1].Type != diffyml.DiffAdded || diffs[1].Path != "newroot" {
-		t.Errorf("expected second diff to be addition 'newroot', got type=%v path=%q",
+	om, ok := diffs[0].To.(*diffyml.OrderedMap)
+	if !ok {
+		t.Fatalf("expected To to be *OrderedMap, got %T", diffs[0].To)
+	}
+	if _, exists := om.Values["newroot"]; !exists {
+		t.Errorf("expected OrderedMap to contain key 'newroot', got keys %v", om.Keys)
+	}
+	if diffs[1].Type != diffyml.DiffModified || diffs[1].Path.String() != "existing.nested" {
+		t.Errorf("expected second diff to be modification 'existing.nested', got type=%v path=%q",
 			diffs[1].Type, diffs[1].Path)
 	}
 }
@@ -1818,10 +1861,10 @@ func TestCompare_SortFallbackBehaviors(t *testing.T) {
 		t.Fatalf("expected 2 diffs, got %d", len(diffs))
 	}
 	// shallow (depth 1) should come before deep.nested (depth 2) in source order
-	if diffs[0].Path != "root.shallow" {
+	if diffs[0].Path.String() != "root.shallow" {
 		t.Errorf("expected first diff 'root.shallow', got %q", diffs[0].Path)
 	}
-	if diffs[1].Path != "root.deep.nested" {
+	if diffs[1].Path.String() != "root.deep.nested" {
 		t.Errorf("expected second diff 'root.deep.nested', got %q", diffs[1].Path)
 	}
 }
@@ -1841,13 +1884,20 @@ z_modified: changed`)
 	if len(diffs) != 2 {
 		t.Fatalf("expected 2 diffs, got %d", len(diffs))
 	}
-	// Root-level modification (source path) comes before root-level addition (target-only)
-	if diffs[0].Type != diffyml.DiffModified || diffs[0].Path != "z_modified" {
-		t.Errorf("expected first diff to be modified 'z_modified', got type=%v path=%q",
+	// Root-level addition (empty parent path) comes before root-level modification
+	if diffs[0].Type != diffyml.DiffAdded || diffs[0].Path.String() != "" {
+		t.Errorf("expected first diff to be addition at root (empty path), got type=%v path=%q",
 			diffs[0].Type, diffs[0].Path)
 	}
-	if diffs[1].Type != diffyml.DiffAdded || diffs[1].Path != "a_added" {
-		t.Errorf("expected second diff to be added 'a_added', got type=%v path=%q",
+	om, ok := diffs[0].To.(*diffyml.OrderedMap)
+	if !ok {
+		t.Fatalf("expected To to be *OrderedMap, got %T", diffs[0].To)
+	}
+	if _, exists := om.Values["a_added"]; !exists {
+		t.Errorf("expected OrderedMap to contain key 'a_added', got keys %v", om.Keys)
+	}
+	if diffs[1].Type != diffyml.DiffModified || diffs[1].Path.String() != "z_modified" {
+		t.Errorf("expected second diff to be modified 'z_modified', got type=%v path=%q",
 			diffs[1].Type, diffs[1].Path)
 	}
 }
@@ -1896,7 +1946,7 @@ func TestCompare_AdditionalIdentifierModify(t *testing.T) {
 	if diffs[0].Type != diffyml.DiffModified {
 		t.Errorf("expected DiffModified, got %v", diffs[0].Type)
 	}
-	if !strings.Contains(diffs[0].Path, "alpha") {
+	if !strings.Contains(diffs[0].Path.String(), "alpha") {
 		t.Errorf("expected path to contain identifier 'alpha', got %q", diffs[0].Path)
 	}
 }
@@ -1924,12 +1974,22 @@ func TestCompare_ParentOrderForAddedChildren(t *testing.T) {
 	if len(diffs) != 2 {
 		t.Fatalf("expected 2 diffs, got %d", len(diffs))
 	}
-	// zzz appears before aaa in the document, so zzz.newkey must come first
-	if diffs[0].Path != "root.zzz.newkey" {
-		t.Errorf("expected first diff 'root.zzz.newkey', got %q", diffs[0].Path)
+	// zzz appears before aaa in the document, so zzz addition must come first
+	if diffs[0].Path.String() != "root.zzz" {
+		t.Errorf("expected first diff path 'root.zzz', got %q", diffs[0].Path)
 	}
-	if diffs[1].Path != "root.aaa.newkey" {
-		t.Errorf("expected second diff 'root.aaa.newkey', got %q", diffs[1].Path)
+	if om, ok := diffs[0].To.(*diffyml.OrderedMap); !ok {
+		t.Errorf("expected first diff To to be *OrderedMap, got %T", diffs[0].To)
+	} else if _, exists := om.Values["newkey"]; !exists {
+		t.Errorf("expected first diff OrderedMap to contain key 'newkey', got keys %v", om.Keys)
+	}
+	if diffs[1].Path.String() != "root.aaa" {
+		t.Errorf("expected second diff path 'root.aaa', got %q", diffs[1].Path)
+	}
+	if om, ok := diffs[1].To.(*diffyml.OrderedMap); !ok {
+		t.Errorf("expected second diff To to be *OrderedMap, got %T", diffs[1].To)
+	} else if _, exists := om.Values["newkey"]; !exists {
+		t.Errorf("expected second diff OrderedMap to contain key 'newkey', got keys %v", om.Keys)
 	}
 }
 
@@ -2130,10 +2190,10 @@ cluster-1:
 	hasClusterAdd := false
 	for _, d := range diffs {
 		if d.Type == diffyml.DiffAdded {
-			if strings.HasPrefix(d.Path, "global_defaults") {
+			if strings.HasPrefix(d.Path.String(), "global_defaults") {
 				hasGlobalAdd = true
 			}
-			if strings.HasPrefix(d.Path, "cluster-1") {
+			if strings.HasPrefix(d.Path.String(), "cluster-1") {
 				hasClusterAdd = true
 			}
 		}
@@ -2272,7 +2332,7 @@ metadata:
 	// The removed document should appear in the diff path as [1]
 	found := false
 	for _, d := range diffs {
-		if strings.HasPrefix(d.Path, "[1]") {
+		if strings.HasPrefix(d.Path.String(), "[1]") {
 			found = true
 		}
 	}

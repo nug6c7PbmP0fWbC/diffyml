@@ -12,18 +12,22 @@ import (
 // renderEntryValue renders a value for an entry batch line.
 // For list entries, renders values with "- " prefix. For map entries, renders as "key: value".
 // The entire block is colored (green for adds, red for removes).
-func (f *DetailedFormatter) renderEntryValue(sb *strings.Builder, val any, symbol string, indent int, path string, isList bool, opts *FormatOptions) {
+func (f *DetailedFormatter) renderEntryValue(sb *strings.Builder, val any, symbol string, indent int, path DiffPath, isList bool, opts *FormatOptions) {
 	code := f.colorRemoved(opts)
 	if symbol == "+" {
 		code = f.colorAdded(opts)
 	}
 
-	// Map entries: extract key from path and render as key: value
+	// Map entries: render as key: value pairs
 	if !isList {
-		key := path
-		if idx := strings.LastIndex(path, "."); idx >= 0 {
-			key = path[idx+1:]
+		// When value is an OrderedMap (parent-level diff), render each key-value directly
+		if om, ok := val.(*OrderedMap); ok {
+			for _, k := range om.Keys {
+				f.renderKeyValueYAML(sb, k, om.Values[k], indent, code, opts)
+			}
+			return
 		}
+		key := path.Last()
 		f.renderKeyValueYAML(sb, key, val, indent, code, opts)
 		return
 	}

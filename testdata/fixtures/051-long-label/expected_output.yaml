@@ -1,0 +1,7 @@
+Found two differences
+
+metadata.labels
+  - two map entries removed:
+    helm.sh/chart: my-chart-1.0.0
+    app.kubernetes.io/managed-by: Helm
+
