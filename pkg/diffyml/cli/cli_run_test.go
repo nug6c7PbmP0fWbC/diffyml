@@ -569,6 +569,503 @@ func TestRun_GitLab_FallbackOnParentTraversingPath(t *testing.T) {
 	}
 }
 
+// --- GIT_EXTERNAL_DIFF integration tests ---
+
+func TestRun_GitExternalDiff_YAMLWithDiffs_UsesDisplayPath(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "charts/deploy.yaml"
+	cfg.Output = "gitlab"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "charts/deploy.yaml") {
+		t.Errorf("expected display path 'charts/deploy.yaml' in output, got: %s", output)
+	}
+}
+
+func TestRun_GitExternalDiff_FileHeader(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "charts/deploy.yaml"
+	cfg.Color = "never"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "--- a/charts/deploy.yaml") {
+		t.Errorf("expected '--- a/' header, got: %s", output)
+	}
+	if !strings.Contains(output, "+++ b/charts/deploy.yaml") {
+		t.Errorf("expected '+++ b/' header, got: %s", output)
+	}
+}
+
+func TestRun_GitExternalDiff_FileHeader_NewFile(t *testing.T) {
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.FromFile = "/dev/null"
+	cfg.Color = "never"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte{}
+	rc.ToContent = []byte("key: value\n")
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "--- /dev/null") {
+		t.Errorf("expected '--- /dev/null' for new file, got: %s", output)
+	}
+	if !strings.Contains(output, "+++ b/deploy.yaml") {
+		t.Errorf("expected '+++ b/' header for new file, got: %s", output)
+	}
+}
+
+func TestRun_GitExternalDiff_FileHeader_DeletedFile(t *testing.T) {
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.ToFile = "/dev/null"
+	cfg.Color = "never"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte("key: value\n")
+	rc.ToContent = []byte{}
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "--- a/deploy.yaml") {
+		t.Errorf("expected '--- a/' header for deleted file, got: %s", output)
+	}
+	if !strings.Contains(output, "+++ /dev/null") {
+		t.Errorf("expected '+++ /dev/null' for deleted file, got: %s", output)
+	}
+}
+
+func TestRun_GitExternalDiff_NonYAML_SkippedWithWarning(t *testing.T) {
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "Makefile"
+	cfg.FromFile = "/tmp/old"
+	cfg.ToFile = "/tmp/new"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 for non-YAML file, got %d", result.Code)
+	}
+	if stdout.String() != "" {
+		t.Errorf("expected no stdout for non-YAML file, got: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Warning: skipping non-YAML file Makefile") {
+		t.Errorf("expected warning on stderr, got: %q", stderr.String())
+	}
+}
+
+func TestRun_GitExternalDiff_NonYAML_Extensions(t *testing.T) {
+	for _, ext := range []string{".go", ".json", ".txt", ".md", ""} {
+		t.Run("ext="+ext, func(t *testing.T) {
+			cfg := NewCLIConfig()
+			cfg.GitExternalDiff = true
+			cfg.GitDisplayPath = "file" + ext
+
+			rc := NewRunConfig()
+			var stdout, stderr strings.Builder
+			rc.Stdout = &stdout
+			rc.Stderr = &stderr
+
+			result := Run(cfg, rc)
+			if result.Code != ExitCodeSuccess {
+				t.Errorf("expected exit 0 for %q file, got %d", ext, result.Code)
+			}
+		})
+	}
+}
+
+func TestRun_GitExternalDiff_DevNull_NewFile(t *testing.T) {
+	yaml2 := "key: newvalue\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.FromFile = "/dev/null"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte{} // empty = /dev/null
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 for new file diff, got %d; stderr: %s", result.Code, stderr.String())
+	}
+	if stdout.String() == "" {
+		t.Error("expected diff output for new file")
+	}
+}
+
+func TestRun_GitExternalDiff_DevNull_DeletedFile(t *testing.T) {
+	yaml1 := "key: oldvalue\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.ToFile = "/dev/null"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte{} // empty = /dev/null
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 for deleted file diff, got %d; stderr: %s", result.Code, stderr.String())
+	}
+	if stdout.String() == "" {
+		t.Error("expected diff output for deleted file")
+	}
+}
+
+func TestRun_GitExternalDiff_SetExitCode_Suppressed(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.SetExitCode = true // should be suppressed in git external diff mode
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 (--set-exit-code suppressed in git mode), got %d", result.Code)
+	}
+	if stdout.String() == "" {
+		t.Error("expected diff output despite exit 0")
+	}
+}
+
+func TestRun_GitExternalDiff_NoDiffs_Exit0(t *testing.T) {
+	yaml := "key: same\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml)
+	rc.ToContent = []byte(yaml)
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 for no diffs, got %d", result.Code)
+	}
+}
+
+func TestRun_GitExternalDiff_AutoForcesColor(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.Color = "auto" // default
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\033[") {
+		t.Error("expected ANSI color codes in git external diff mode with color=auto")
+	}
+}
+
+func TestRun_GitExternalDiff_ColorNeverRespected(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.Color = "never"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "\033[") {
+		t.Error("expected no ANSI color codes with --color never")
+	}
+}
+
+func TestRun_GitExternalDiff_AutoForcesTrueColor(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.TrueColor = "auto" // default
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "\033[38;2;") {
+		t.Error("expected 24-bit ANSI color codes in git external diff mode with truecolor=auto")
+	}
+}
+
+func TestRun_GitExternalDiff_TrueColorNeverRespected(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "deploy.yaml"
+	cfg.TrueColor = "never"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code == ExitCodeError {
+		t.Fatalf("unexpected error: %v; stderr: %s", result.Err, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "\033[38;2;") {
+		t.Error("expected no 24-bit ANSI color codes with --truecolor never")
+	}
+}
+
+func TestRun_GitExternalDiff_FullPipeline_ParseArgsThenRun(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	err := cfg.ParseArgs([]string{
+		"--set-exit-code",
+		"--output", "gitlab",
+		"charts/deploy.yaml",       // name
+		"/tmp/old-content",         // old-file
+		"abc1234abc1234abc1234",    // old-hex
+		"100644",                   // old-mode
+		"/work/charts/deploy.yaml", // new-file
+		"def5678def5678def5678",    // new-hex
+		"100644",                   // new-mode
+	})
+	if err != nil {
+		t.Fatalf("ParseArgs failed: %v", err)
+	}
+
+	if !cfg.GitExternalDiff {
+		t.Fatal("expected GitExternalDiff=true after ParseArgs")
+	}
+	if !cfg.SetExitCode {
+		t.Fatal("expected SetExitCode=true after ParseArgs")
+	}
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	// --set-exit-code is suppressed in git external diff mode (git aborts on non-zero)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 (--set-exit-code suppressed), got %d; stderr: %s", result.Code, stderr.String())
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "charts/deploy.yaml") {
+		t.Errorf("expected display path in output, got: %s", output)
+	}
+}
+
+func TestRun_GitExternalDiff_ParseError_NonFatal(t *testing.T) {
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "broken.yaml"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte("valid: yaml\n")
+	rc.ToContent = []byte(":\n  bad:\n    - [unmatched")
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 for parse error in git mode, got %d", result.Code)
+	}
+	if !strings.Contains(stderr.String(), "Warning: skipping broken.yaml") {
+		t.Errorf("expected warning on stderr, got: %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "Error:") {
+		t.Errorf("expected no 'Error:' prefix in git mode, got: %q", stderr.String())
+	}
+}
+
+func TestRun_GitExternalDiff_ReadError_NonFatal(t *testing.T) {
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "missing.yaml"
+	cfg.FromFile = "/nonexistent/path/old.yaml"
+	cfg.ToFile = "/nonexistent/path/new.yaml"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Errorf("expected exit 0 for read error in git mode, got %d", result.Code)
+	}
+	if !strings.Contains(stderr.String(), "Warning: skipping missing.yaml") {
+		t.Errorf("expected warning on stderr, got: %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "Error:") {
+		t.Errorf("expected no 'Error:' prefix in git mode, got: %q", stderr.String())
+	}
+}
+
+func TestRun_GitExternalDiff_RenameHeader(t *testing.T) {
+	yaml1 := "key: value1\n"
+	yaml2 := "key: value2\n"
+
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitOriginalPath = "old-name.yaml"
+	cfg.GitDisplayPath = "new-name.yaml"
+	cfg.Color = "never"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+	rc.FromContent = []byte(yaml1)
+	rc.ToContent = []byte(yaml2)
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Fatalf("expected exit 0, got %d: %v", result.Code, result.Err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "--- a/old-name.yaml") {
+		t.Errorf("expected '--- a/old-name.yaml' in header, got: %q", out)
+	}
+	if !strings.Contains(out, "+++ b/new-name.yaml") {
+		t.Errorf("expected '+++ b/new-name.yaml' in header, got: %q", out)
+	}
+}
+
+func TestRun_GitExternalDiff_NonYAML_Warning(t *testing.T) {
+	cfg := NewCLIConfig()
+	cfg.GitExternalDiff = true
+	cfg.GitDisplayPath = "config.json"
+
+	rc := NewRunConfig()
+	var stdout, stderr strings.Builder
+	rc.Stdout = &stdout
+	rc.Stderr = &stderr
+
+	result := Run(cfg, rc)
+	if result.Code != ExitCodeSuccess {
+		t.Fatalf("expected exit 0, got %d", result.Code)
+	}
+	if stdout.String() != "" {
+		t.Errorf("expected no stdout, got: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Warning: skipping non-YAML file config.json") {
+		t.Errorf("expected warning on stderr, got: %q", stderr.String())
+	}
+}
+
 func TestRun_TrueColorAlways(t *testing.T) {
 	yaml1 := "key: value1\n"
 	yaml2 := "key: value2\n"

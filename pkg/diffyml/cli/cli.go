@@ -61,6 +61,11 @@ type CLIConfig struct {
 	Summary      bool   // --summary / -S: enable AI summary
 	SummaryModel string // --summary-model: Anthropic model override
 
+	// Git external diff mode
+	GitExternalDiff bool   // true when 7-arg GIT_EXTERNAL_DIFF convention detected
+	GitDisplayPath  string // repo-relative path for display headers (rename-to when renamed)
+	GitOriginalPath string // original repo-relative path (differs from GitDisplayPath on rename)
+
 	// Exit code behavior
 	SetExitCode bool
 	ShowHelp    bool
@@ -156,7 +161,8 @@ func (c *CLIConfig) initFlags() {
 }
 
 // ParseArgs parses command-line arguments.
-// Expects at least two non-flag arguments: <from> and <to> files.
+// Expects at least two non-flag arguments: <from> and <to> files,
+// or 7-9 positional arguments for GIT_EXTERNAL_DIFF mode.
 //
 // Supports interspersed flags and positional arguments (e.g.
 // "dir1 dir2 --set-exit-code") because kubectl places
@@ -170,6 +176,26 @@ func (c *CLIConfig) ParseArgs(args []string) error {
 
 	// Get remaining non-flag arguments (file paths)
 	remaining := c.fs.Args()
+
+	// Detect GIT_EXTERNAL_DIFF calling convention:
+	//   7 args: name old-file old-hex old-mode new-file new-hex new-mode
+	//   8 args: ... rename-to
+	//   9 args: ... rename-to xfrm_msg
+	//
+	// Detection: 7-9 positional args with valid octal modes at positions 3 and 6.
+	// This heuristic is unambiguous — no normal 2-file invocation produces these.
+	if len(remaining) >= 7 && len(remaining) <= 9 &&
+		isOctalMode(remaining[3]) && isOctalMode(remaining[6]) {
+		c.GitExternalDiff = true
+		c.GitOriginalPath = remaining[0]
+		c.GitDisplayPath = remaining[0]
+		c.FromFile = remaining[1] // old-file
+		c.ToFile = remaining[4]   // new-file
+		if len(remaining) >= 8 {
+			c.GitDisplayPath = remaining[7] // rename-to overrides display path
+		}
+		return nil
+	}
 
 	if len(remaining) < 2 {
 		return fmt.Errorf("requires two file arguments: <from> <to>")
@@ -330,6 +356,24 @@ func (c *CLIConfig) Usage() string {
 	sb.WriteString("  -s, --set-exit-code                 set program exit code based on differences\n")
 	sb.WriteString("  -h, --help                          show this help\n")
 	sb.WriteString("  -V, --version                       show version information\n")
+	sb.WriteString("\n")
+
+	// Git integration
+	sb.WriteString("Git integration:\n")
+	sb.WriteString("  diffyml can be used as a git external diff program. Non-YAML files are\n")
+	sb.WriteString("  skipped with a warning. Git passes 7-9 positional arguments which diffyml\n")
+	sb.WriteString("  auto-detects. Color and truecolor are auto-forced (use --color never to\n")
+	sb.WriteString("  disable). --set-exit-code is ignored (git aborts on non-zero exit).\n")
+	sb.WriteString("  Parse errors are non-fatal (warning printed, git continues).\n")
+	sb.WriteString("\n")
+	sb.WriteString("  One-off:\n")
+	sb.WriteString("    GIT_EXTERNAL_DIFF=diffyml git diff\n")
+	sb.WriteString("    GIT_EXTERNAL_DIFF='diffyml -o compact' git diff\n")
+	sb.WriteString("\n")
+	sb.WriteString("  Permanent (via .gitattributes — other file types use git's built-in diff):\n")
+	sb.WriteString("    *.yaml diff=diffyml  (in .gitattributes)\n")
+	sb.WriteString("    *.yml  diff=diffyml  (in .gitattributes)\n")
+	sb.WriteString("    git config diff.diffyml.command diffyml\n")
 
 	return sb.String()
 }
@@ -545,7 +589,9 @@ func runComparison(cfg *CLIConfig, rc *RunConfig, fromContent, toContent []byte,
 	diffs, err := diffyml.Compare(fromContent, toContent, compareOpts)
 	if err != nil {
 		err = fmt.Errorf("failed to compare files: %w", err)
-		fmt.Fprintf(rc.Stderr, "Error: %v\n", err)
+		if !cfg.GitExternalDiff {
+			fmt.Fprintf(rc.Stderr, "Error: %v\n", err)
+		}
 		return NewExitResult(ExitCodeError, err)
 	}
 
@@ -553,12 +599,11 @@ func runComparison(cfg *CLIConfig, rc *RunConfig, fromContent, toContent []byte,
 	diffs, err = diffyml.FilterDiffsWithRegexp(diffs, filterOpts)
 	if err != nil {
 		err = fmt.Errorf("filter error: %w", err)
-		fmt.Fprintf(rc.Stderr, "Error: %v\n", err)
+		if !cfg.GitExternalDiff {
+			fmt.Fprintf(rc.Stderr, "Error: %v\n", err)
+		}
 		return NewExitResult(ExitCodeError, err)
 	}
-
-	// Set file path for formatters that use it (e.g., GitLab)
-	formatOpts.FilePath = normalizeFilePath(cfg.ToFile)
 
 	// For brief + summary: defer output until we know if the API call succeeds
 	isBriefSummary := cfg.Output == "brief" && cfg.Summary
@@ -575,7 +620,7 @@ func runComparison(cfg *CLIConfig, rc *RunConfig, fromContent, toContent []byte,
 		if rc.SummaryAPIURL != "" {
 			summarizer.apiURL = rc.SummaryAPIURL
 		}
-		groups := []diffyml.DiffGroup{{FilePath: normalizeFilePath(cfg.ToFile), Diffs: diffs}}
+		groups := []diffyml.DiffGroup{{FilePath: formatOpts.FilePath, Diffs: diffs}}
 		summary, summaryErr := summarizer.Summarize(context.Background(), groups)
 		if summaryErr != nil {
 			if isBriefSummary {
@@ -609,6 +654,12 @@ func Run(cfg *CLIConfig, rc *RunConfig) *ExitResult {
 		return NewExitResult(ExitCodeSuccess, nil)
 	}
 
+	// In git external diff mode, skip non-YAML files with a warning
+	if cfg.GitExternalDiff && !isYAMLFile(cfg.GitDisplayPath) {
+		fmt.Fprintf(rc.Stderr, "Warning: skipping non-YAML file %s\n", cfg.GitDisplayPath)
+		return NewExitResult(ExitCodeSuccess, nil)
+	}
+
 	// Validate configuration (unless using pre-loaded content for testing)
 	if rc.FromContent == nil && rc.ToContent == nil {
 		if err := cfg.Validate(); err != nil {
@@ -638,13 +689,87 @@ func Run(cfg *CLIConfig, rc *RunConfig) *ExitResult {
 		return NewExitResult(ExitCodeError, err)
 	}
 
-	fromContent, toContent, err := loadContents(cfg, rc)
-	if err != nil {
-		fmt.Fprintf(rc.Stderr, "Error: %v\n", err)
-		return NewExitResult(ExitCodeError, err)
+	// In git external diff mode:
+	// - Force color/truecolor on unless explicitly disabled, because git pipes
+	//   external diff output through its pager (stdout is not a TTY).
+	// - Suppress --set-exit-code: git aborts with "external diff died" on
+	//   non-zero exit, so exit 1 would stop at the first changed file.
+	if cfg.GitExternalDiff {
+		if cfg.Color != "never" {
+			formatOpts.Color = true
+		}
+		if cfg.TrueColor != "never" {
+			formatOpts.TrueColor = true
+		}
+		cfg.SetExitCode = false
 	}
 
-	return runComparison(cfg, rc, fromContent, toContent, formatter, formatOpts)
+	// Set file path for formatters that use it (e.g., GitLab)
+	if cfg.GitExternalDiff {
+		formatOpts.FilePath = cfg.GitDisplayPath
+	} else {
+		formatOpts.FilePath = normalizeFilePath(cfg.ToFile)
+	}
+
+	fromContent, toContent, err := loadContents(cfg, rc)
+	if err != nil {
+		if !cfg.GitExternalDiff {
+			fmt.Fprintf(rc.Stderr, "Error: %v\n", err)
+		}
+		return gitExternalDiffGuard(cfg, rc, NewExitResult(ExitCodeError, err))
+	}
+
+	// In git external diff mode, print a file header so multi-file output
+	// is identifiable (git concatenates external diff output with no separator).
+	if cfg.GitExternalDiff {
+		switch {
+		case cfg.FromFile == "/dev/null":
+			fmt.Fprint(rc.Stdout, diffyml.FormatFileHeader(cfg.GitDisplayPath, diffyml.FilePairOnlyTo, formatOpts))
+		case cfg.ToFile == "/dev/null":
+			name := cfg.GitOriginalPath
+			if name == "" {
+				name = cfg.GitDisplayPath
+			}
+			fmt.Fprint(rc.Stdout, diffyml.FormatFileHeader(name, diffyml.FilePairOnlyFrom, formatOpts))
+		case cfg.GitOriginalPath != "" && cfg.GitOriginalPath != cfg.GitDisplayPath:
+			fmt.Fprint(rc.Stdout, diffyml.FormatRenameFileHeader(cfg.GitOriginalPath, cfg.GitDisplayPath, formatOpts))
+		default:
+			fmt.Fprint(rc.Stdout, diffyml.FormatFileHeader(cfg.GitDisplayPath, diffyml.FilePairBothExist, formatOpts))
+		}
+	}
+
+	result := runComparison(cfg, rc, fromContent, toContent, formatter, formatOpts)
+	return gitExternalDiffGuard(cfg, rc, result)
+}
+
+// gitExternalDiffGuard converts errors to warnings in git external diff mode.
+// Git aborts with "external diff died" on non-zero exit, so errors must be
+// non-fatal to let git continue to the next file.
+func gitExternalDiffGuard(cfg *CLIConfig, rc *RunConfig, result *ExitResult) *ExitResult {
+	if cfg.GitExternalDiff && result.Code == ExitCodeError {
+		fmt.Fprintf(rc.Stderr, "Warning: skipping %s: %v\n", cfg.GitDisplayPath, result.Err)
+		return NewExitResult(ExitCodeSuccess, nil)
+	}
+	return result
+}
+
+// isOctalMode returns true if s is a 6-character octal string (e.g. "100644", "000000").
+func isOctalMode(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '7' {
+			return false
+		}
+	}
+	return true
+}
+
+// isYAMLFile returns true if the file path has a .yaml or .yml extension.
+func isYAMLFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".yaml" || ext == ".yml"
 }
 
 // normalizeFilePath converts a file path to a clean relative path.
