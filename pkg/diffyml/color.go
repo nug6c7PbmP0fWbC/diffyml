@@ -223,6 +223,96 @@ func colorEnd(opts *FormatOptions) string {
 	return ""
 }
 
+// YAMLColorPalette holds per-element color codes for YAML syntax highlighting.
+// Each field is a pre-computed ANSI escape string. In TrueColor mode, fields
+// have distinct shades; in 8-color mode, all fields share the same ANSI code.
+type YAMLColorPalette struct {
+	Key            string // Map keys, key-only lines, and structured list "- " prefixes
+	Scalar         string // String, bool, int, float values
+	MultilineText  string // Block literal content lines
+	Null           string // nil/null values
+	EmptyStructure string // Empty maps {} and empty lists []
+}
+
+// ScalarColor returns the color for a scalar value, using Null for nil values.
+func (p *YAMLColorPalette) ScalarColor(val any) string {
+	if val == nil {
+		return p.Null
+	}
+	return p.Scalar
+}
+
+// Cached palettes (computed once). TrueColor palettes use per-element shading;
+// flat palettes use a single ANSI code for all elements.
+var (
+	cachedGreenPalette = &YAMLColorPalette{
+		Key:            styleBold + TrueColorCode(50, 170, 100),
+		Scalar:         TrueColorCode(130, 230, 100),
+		MultilineText:  TrueColorCode(140, 200, 95),
+		Null:           TrueColorCode(100, 155, 115),
+		EmptyStructure: TrueColorCode(80, 135, 95),
+	}
+	cachedRedPalette = &YAMLColorPalette{
+		Key:            styleBold + TrueColorCode(210, 80, 70),
+		Scalar:         TrueColorCode(245, 140, 110),
+		MultilineText:  TrueColorCode(230, 155, 120),
+		Null:           TrueColorCode(195, 140, 130),
+		EmptyStructure: TrueColorCode(170, 120, 110),
+	}
+	cachedFlatGreen = flatPalette(colorGreen)
+	cachedFlatRed   = flatPalette(colorRed)
+	// Neutral palette for unexpected DiffTypes — renders as white so it's
+	// visually distinct from additions (green) and removals (red).
+	cachedNeutralPalette = &YAMLColorPalette{
+		Key:            styleBold + TrueColorCode(200, 200, 200),
+		Scalar:         TrueColorCode(220, 220, 220),
+		MultilineText:  TrueColorCode(210, 210, 210),
+		Null:           TrueColorCode(180, 180, 180),
+		EmptyStructure: TrueColorCode(170, 170, 170),
+	}
+	cachedFlatNeutral = flatPalette(colorWhite)
+)
+
+func flatPalette(code string) *YAMLColorPalette {
+	return &YAMLColorPalette{
+		Key: code, Scalar: code, MultilineText: code,
+		Null: code, EmptyStructure: code,
+	}
+}
+
+// entryPalette returns the color palette for rendering diff entries.
+// Always returns a non-nil palette: TrueColor mode gets per-element shading,
+// 8-color mode gets a flat palette where all fields share the same ANSI code.
+func entryPalette(diffType DiffType, useTrueColor bool) *YAMLColorPalette {
+	switch diffType {
+	case DiffAdded:
+		if useTrueColor {
+			return cachedGreenPalette
+		}
+		return cachedFlatGreen
+	case DiffRemoved:
+		if useTrueColor {
+			return cachedRedPalette
+		}
+		return cachedFlatRed
+	default:
+		// Neutral palette — currently unreachable in production (DiffModified and
+		// DiffOrderChanged route through formatChangeDescriptor, not renderEntryValue).
+		// Kept as a safety net for future DiffTypes.
+		if useTrueColor {
+			return cachedNeutralPalette
+		}
+		return cachedFlatNeutral
+	}
+}
+
+// DetectTrueColorSupport checks if the terminal supports 24-bit color
+// via the COLORTERM environment variable (standard detection method).
+func DetectTrueColorSupport() bool {
+	ct := os.Getenv("COLORTERM")
+	return ct == "truecolor" || ct == "24bit"
+}
+
 // clamp restricts a value to the range [lo, hi].
 func clamp(val, lo, hi int) int {
 	return max(lo, min(val, hi))

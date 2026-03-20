@@ -140,10 +140,10 @@ func TestDetailedFormatter_TrueColor_AdditionGreen(t *testing.T) {
 	}
 
 	output := f.Format(diffs, opts)
-	// Should use detailed true color green (88, 191, 56)
-	expectedTrueColor := "\033[38;2;88;191;56m"
-	if !strings.Contains(output, expectedTrueColor) {
-		t.Errorf("expected true color green %q for addition, got: %q", expectedTrueColor, output)
+	// Scalar list entry uses palette scalar color
+	expectedScalar := cachedGreenPalette.Scalar
+	if !strings.Contains(output, expectedScalar) {
+		t.Errorf("expected palette scalar green %q for addition, got: %q", expectedScalar, output)
 	}
 }
 
@@ -158,10 +158,10 @@ func TestDetailedFormatter_TrueColor_RemovalRed(t *testing.T) {
 	}
 
 	output := f.Format(diffs, opts)
-	// Should use detailed true color red (185, 49, 27)
-	expectedTrueColor := "\033[38;2;185;49;27m"
-	if !strings.Contains(output, expectedTrueColor) {
-		t.Errorf("expected true color red %q for removal, got: %q", expectedTrueColor, output)
+	// Scalar list entry uses palette scalar color
+	expectedScalar := cachedRedPalette.Scalar
+	if !strings.Contains(output, expectedScalar) {
+		t.Errorf("expected palette scalar red %q for removal, got: %q", expectedScalar, output)
 	}
 }
 
@@ -403,13 +403,13 @@ func TestDetailedFormatter_ColorEnabled_EntryValueColored(t *testing.T) {
 	}
 
 	output := f.Format(diffs, opts)
-	// All value lines should be colored green (addition)
+	// Key and value should be colored separately (both green in 8-color mode)
 	addedColor := DetailedColorCode(DiffAdded, false)
-	if !strings.Contains(output, addedColor+"    - name: nginx") {
-		t.Errorf("expected green colored '- name: nginx', got: %q", output)
+	if !strings.Contains(output, addedColor+"    - name:"+colorReset+addedColor+" nginx") {
+		t.Errorf("expected green colored '- name:' + ' nginx', got: %q", output)
 	}
-	if !strings.Contains(output, addedColor+"      port: 80") {
-		t.Errorf("expected green colored 'port: 80' at +2 indent, got: %q", output)
+	if !strings.Contains(output, addedColor+"      port:"+colorReset+addedColor+" 80") {
+		t.Errorf("expected green colored 'port:' + ' 80' at +2 indent, got: %q", output)
 	}
 }
 
@@ -483,9 +483,9 @@ func TestDetailedFormatter_ColorEnabled_ListEntryValueColored(t *testing.T) {
 	}
 
 	output := f.Format(diffs, opts)
-	// List entries should be colored green
+	// List entries should have colored prefix and value (both green in 8-color mode)
 	addedColor := DetailedColorCode(DiffAdded, false)
-	if !strings.Contains(output, addedColor+"    - alpha") {
+	if !strings.Contains(output, addedColor+"    -"+colorReset+addedColor+" alpha") {
 		t.Errorf("expected green colored '- alpha' list item, got: %q", output)
 	}
 }
@@ -606,9 +606,9 @@ func TestDetailedFormatter_Integration_AllDiffTypesColored(t *testing.T) {
 		t.Errorf("expected italic 'string' in type change descriptor, got: %q", output)
 	}
 
-	// 3. Entry values colored (structured map added has green-colored YAML lines)
+	// 3. Entry values colored (key and value separately, both green in 8-color mode)
 	addedColor := DetailedColorCode(DiffAdded, false)
-	if !strings.Contains(output, addedColor+"    - name: nginx") {
+	if !strings.Contains(output, addedColor+"    - name:"+colorReset+addedColor+" nginx") {
 		t.Errorf("expected green colored entry value lines, got: %q", output)
 	}
 
@@ -711,14 +711,16 @@ func TestDetailedFormatter_Integration_TrueColorBoldItalicCombination(t *testing
 		t.Errorf("expected italic type names in true color mode, got: %q", output)
 	}
 
-	// True color green on entry value lines
-	trueGreen := DetailedColorCode(DiffAdded, true)
-	if !strings.Contains(output, trueGreen+"    - name: nginx") {
-		t.Errorf("expected true color green for entry value lines, got: %q", output)
+	// Palette key green on key, scalar green on value (split coloring)
+	paletteKey := cachedGreenPalette.Key
+	paletteScalar := cachedGreenPalette.Scalar
+	if !strings.Contains(output, paletteKey+"    - name:"+colorReset+paletteScalar+" nginx") {
+		t.Errorf("expected palette key/scalar green for entry value lines, got: %q", output)
 	}
 
-	// True color red/green on -/+
+	// True color red/green on order change -/+ (single-color, not palette)
 	trueRed := DetailedColorCode(DiffRemoved, true)
+	trueGreen := DetailedColorCode(DiffAdded, true)
 	if !strings.Contains(output, trueRed+"    - ") {
 		t.Errorf("expected true color red on '- ' line, got: %q", output)
 	}
@@ -786,5 +788,283 @@ func TestDetailedFormatter_ColorEnabled_DocumentRemovalRed(t *testing.T) {
 	}
 	if !strings.Contains(output, "\033[31m") && !strings.Contains(output, "\033[38;2;") {
 		t.Errorf("expected red color code for document removal, got:\n%s", output)
+	}
+}
+
+// Per-element palette tests (TrueColor mode only)
+
+func TestDetailedFormatter_TrueColor_PaletteKeyColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	om := NewOrderedMap()
+	om.Keys = append(om.Keys, "metadata")
+	inner := NewOrderedMap()
+	inner.Keys = append(inner.Keys, "name")
+	inner.Values["name"] = "test"
+	om.Values["metadata"] = inner
+
+	diffs := []Difference{
+		{Path: DiffPath{"services", "0"}, Type: DiffAdded, To: om},
+	}
+	output := f.Format(diffs, opts)
+
+	keyGreen := cachedGreenPalette.Key
+	// "metadata:" is a key-only line → palette.Key
+	if !strings.Contains(output, keyGreen) {
+		t.Errorf("expected palette key green %q, got: %q", keyGreen, output)
+	}
+	// Key color must include bold style for structural emphasis
+	if !strings.HasPrefix(cachedGreenPalette.Key, styleBold) {
+		t.Errorf("green palette key should start with bold style, got: %q", cachedGreenPalette.Key)
+	}
+	if !strings.HasPrefix(cachedRedPalette.Key, styleBold) {
+		t.Errorf("red palette key should start with bold style, got: %q", cachedRedPalette.Key)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_PaletteScalarColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "name"}, Type: DiffAdded, To: "nginx"},
+	}
+	output := f.Format(diffs, opts)
+
+	scalarGreen := cachedGreenPalette.Scalar
+	if !strings.Contains(output, scalarGreen) {
+		t.Errorf("expected palette scalar green %q, got: %q", scalarGreen, output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_PaletteMultilineColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "data"}, Type: DiffAdded, To: "line1\nline2\nline3"},
+	}
+	output := f.Format(diffs, opts)
+
+	mlGreen := cachedGreenPalette.MultilineText
+	if !strings.Contains(output, mlGreen) {
+		t.Errorf("expected palette multiline green %q, got: %q", mlGreen, output)
+	}
+	// The prefix "data: |" should use key color
+	keyGreen := cachedGreenPalette.Key
+	if !strings.Contains(output, keyGreen) {
+		t.Errorf("expected palette key green for multiline prefix, got: %q", output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_PaletteNullColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "value"}, Type: DiffAdded, To: nil},
+	}
+	output := f.Format(diffs, opts)
+
+	nullGreen := cachedGreenPalette.Null
+	if !strings.Contains(output, nullGreen) {
+		t.Errorf("expected palette null green %q, got: %q", nullGreen, output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_RedPaletteScalarColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "name"}, Type: DiffRemoved, From: "nginx"},
+	}
+	output := f.Format(diffs, opts)
+
+	scalarRed := cachedRedPalette.Scalar
+	if !strings.Contains(output, scalarRed) {
+		t.Errorf("expected palette scalar red %q, got: %q", scalarRed, output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_RedPaletteKeyColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	om := NewOrderedMap()
+	om.Keys = append(om.Keys, "metadata")
+	inner := NewOrderedMap()
+	inner.Keys = append(inner.Keys, "name")
+	inner.Values["name"] = "old"
+	om.Values["metadata"] = inner
+
+	diffs := []Difference{
+		{Path: DiffPath{"services", "0"}, Type: DiffRemoved, From: om},
+	}
+	output := f.Format(diffs, opts)
+
+	keyRed := cachedRedPalette.Key
+	if !strings.Contains(output, keyRed) {
+		t.Errorf("expected palette key red %q, got: %q", keyRed, output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_RedPaletteMultilineColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "data"}, Type: DiffRemoved, From: "line1\nline2"},
+	}
+	output := f.Format(diffs, opts)
+
+	mlRed := cachedRedPalette.MultilineText
+	if !strings.Contains(output, mlRed) {
+		t.Errorf("expected palette multiline red %q, got: %q", mlRed, output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_EmptyStructureColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	// A parent map with "labels" key pointing to an empty OrderedMap
+	om := NewOrderedMap()
+	om.Keys = append(om.Keys, "labels")
+	om.Values["labels"] = NewOrderedMap()
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "0"}, Type: DiffAdded, To: om},
+	}
+	output := f.Format(diffs, opts)
+
+	emptyGreen := cachedGreenPalette.EmptyStructure
+	if !strings.Contains(output, emptyGreen) {
+		t.Errorf("expected palette empty structure green %q, got: %q", emptyGreen, output)
+	}
+	if !strings.Contains(output, "labels: {}") {
+		t.Errorf("expected empty map rendered as 'labels: {}', got: %q", output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_EmptyMapStringAnyColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	// Use map[string]any{} to cover the map[string]any empty branch in renderKVCore
+	om := NewOrderedMap()
+	om.Keys = append(om.Keys, "labels")
+	om.Values["labels"] = map[string]any{}
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "0"}, Type: DiffAdded, To: om},
+	}
+	output := f.Format(diffs, opts)
+
+	emptyGreen := cachedGreenPalette.EmptyStructure
+	if !strings.Contains(output, emptyGreen) {
+		t.Errorf("expected palette empty structure green %q, got: %q", emptyGreen, output)
+	}
+	if !strings.Contains(output, "labels: {}") {
+		t.Errorf("expected empty map rendered as 'labels: {}', got: %q", output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_EmptyListColor(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "items"}, Type: DiffAdded, To: []any{}},
+	}
+	output := f.Format(diffs, opts)
+
+	emptyGreen := cachedGreenPalette.EmptyStructure
+	if !strings.Contains(output, emptyGreen) {
+		t.Errorf("expected palette empty structure green %q, got: %q", emptyGreen, output)
+	}
+	if !strings.Contains(output, "items: []") {
+		t.Errorf("expected empty list rendered as 'items: []', got: %q", output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_DocumentPaletteColors(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = true
+	opts.OmitHeader = true
+
+	doc := NewOrderedMap()
+	doc.Keys = append(doc.Keys, "metadata")
+	inner := NewOrderedMap()
+	inner.Keys = append(inner.Keys, "name")
+	inner.Values["name"] = "my-service"
+	doc.Values["metadata"] = inner
+
+	diffs := []Difference{
+		{Path: DiffPath{"[0]"}, Type: DiffAdded, To: doc},
+	}
+	output := f.Format(diffs, opts)
+
+	// "metadata:" key-only line should use palette key color
+	if !strings.Contains(output, cachedGreenPalette.Key+"    metadata:") {
+		t.Errorf("expected palette key green for document key line, got: %q", output)
+	}
+	// "name: my-service" should have key and scalar colored separately
+	if !strings.Contains(output, cachedGreenPalette.Key+"      name:"+colorReset+cachedGreenPalette.Scalar+" my-service") {
+		t.Errorf("expected palette key/scalar green for document scalar line, got: %q", output)
+	}
+}
+
+func TestDetailedFormatter_TrueColor_FallbackNoPalette(t *testing.T) {
+	f, _ := FormatterByName("detailed")
+	opts := DefaultFormatOptions()
+	opts.Color = true
+	opts.TrueColor = false // 8-color mode
+
+	diffs := []Difference{
+		{Path: DiffPath{"config", "name"}, Type: DiffAdded, To: "nginx"},
+	}
+	output := f.Format(diffs, opts)
+
+	// Should use standard 8-color green, not palette colors
+	if !strings.Contains(output, "\033[32m") {
+		t.Errorf("expected 8-color green in non-TrueColor mode, got: %q", output)
+	}
+	// Should NOT contain any palette true color codes
+	if strings.Contains(output, cachedGreenPalette.Scalar) {
+		t.Errorf("palette colors should not appear in 8-color mode, got: %q", output)
 	}
 }
