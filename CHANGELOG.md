@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.22] - 2026-04-17
+
+### Fixed
+
+- Exclude/include filters now match keys inside added/removed map entries (#105) ([#105](https://github.com/szhekpisov/diffyml/pull/105))
+
+### Documentation
+
+- README cleanup — action link, trim K8s, surface security, reorder Usage (#104) ([#104](https://github.com/szhekpisov/diffyml/pull/104))
+
 ## [1.5.21] - 2026-04-17
 
 ### Documentation
@@ -216,6 +226,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add GOPATH/bin PATH hint to Go Install section (#3) ([#3](https://github.com/szhekpisov/diffyml/pull/3))
 - Cleanup (#6) ([#6](https://github.com/szhekpisov/diffyml/pull/6))
 
+[1.5.22]: https://github.com/szhekpisov/diffyml/compare/v1.5.21...v1.5.22
 [1.5.21]: https://github.com/szhekpisov/diffyml/compare/v1.5.20...v1.5.21
 [1.5.20]: https://github.com/szhekpisov/diffyml/compare/v1.5.19...v1.5.20
 [1.5.19]: https://github.com/szhekpisov/diffyml/compare/v1.5.18...v1.5.19
