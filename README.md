@@ -19,23 +19,22 @@ diffyml compares YAML files and shows meaningful, structured differences — not
 
 - [Why diffyml?](#why-diffyml)
 - [How It Compares](#how-it-compares)
-- [Kubernetes Intelligence](#kubernetes-intelligence)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Features](#features)
 - [Usage](#usage)
   - [Output Formats](#output-formats)
+  - [CI Integration](#ci-integration)
   - [Kubernetes Support](#kubernetes-support)
   - [Directory Comparison](#directory-comparison)
   - [Git Integration](#git-integration)
-  - [Filtering](#filtering)
-  - [CI Integration](#ci-integration)
   - [AI Summary](#ai-summary)
+  - [Filtering](#filtering)
   - [Configuration File](#configuration-file)
   - [Custom Colors](#custom-colors)
   - [All Flags](#all-flags)
 - [Library Usage](#library-usage)
-- [Code Quality](#code-quality)
+- [Security & Code Quality](#security--code-quality)
 - [Contributing](#contributing)
 - [Acknowledgments](#acknowledgments)
 - [License](#license)
@@ -68,14 +67,6 @@ diffyml compares YAML files and shows meaningful, structured differences — not
 
 Comparison based on dyff v1.11.2 and diffyml v1.5.13. See [PERFORMANCE.md](doc/PERFORMANCE.md) for benchmark methodology. [Open an issue](https://github.com/szhekpisov/diffyml/issues) if anything is outdated.
 
-## Kubernetes Intelligence
-
-diffyml auto-detects Kubernetes resources and matches them by `apiVersion`, `kind`, and `metadata.name` (or `metadata.generateName`) — so diffs stay meaningful even when document order changes.
-
-- **Rename detection** — detects renamed/moved resources by content similarity (e.g., kustomize `configMapGenerator` hash-suffix changes like `app-config-abc123` → `app-config-def456`) and shows field-level diffs instead of bulk add/remove
-- **API migration support** — `--ignore-api-version` drops `apiVersion` from the matching key, so an upgrade from `apps/v1beta1` to `apps/v1` shows field-level diffs instead of a remove + add
-- **Drop-in for kubectl** — compare two directories of YAML files and use as `KUBECTL_EXTERNAL_DIFF` with no extra setup
-
 ## Installation
 
 ### Homebrew
@@ -107,14 +98,15 @@ go build -o diffyml
 
 ### Verifying Releases
 
-Published release artifacts are never modified or re-uploaded — each version is a one-time, append-only event.
-
-Every release includes cryptographic verification artifacts:
+Published release artifacts are never modified or re-uploaded — each version is a one-time, append-only event. Every release includes:
 
 - **Checksums** (`checksums.txt`) — SHA256 hashes for all archives
 - **Cosign signature** (`checksums.txt.sigstore.json`) — keyless Sigstore signature
 - **SBOMs** (`*.spdx.json`) — SPDX Software Bill of Materials for each archive
 - **SLSA provenance** — Level 3 provenance attestation
+
+<details>
+<summary>Verification commands</summary>
 
 **Verify the checksums signature:**
 
@@ -136,6 +128,8 @@ shasum -a 256 --check checksums.txt --ignore-missing
 gh attestation verify diffyml_<VERSION>_linux_amd64.tar.gz \
   --repo szhekpisov/diffyml
 ```
+
+</details>
 
 ## Quick Start
 
@@ -185,6 +179,46 @@ diffyml [flags] <from> <to>
 | gitlab | `-o gitlab` | GitLab CI annotations |
 | gitea | `-o gitea` | Gitea CI annotations |
 | json | `-o json` | Machine-readable — piping, scripting, CI |
+
+### CI Integration
+
+Use `-s` / `--set-exit-code` to set the exit code based on differences:
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | No differences (or success without `-s`) |
+| `1` | Differences detected (only with `-s`) |
+| `255` | Error occurred |
+
+```bash
+diffyml -s before.yaml after.yaml || echo "Config drift detected"
+```
+
+**GitHub Actions** — use the [`diffyml-action`](https://github.com/szhekpisov/diffyml-action) composite action (no manual binary install):
+
+```yaml
+- uses: szhekpisov/diffyml-action@v1
+  with:
+    from: old.yaml
+    to: new.yaml
+```
+
+To inspect drift without failing the job, read the `has-differences` output:
+
+```yaml
+- uses: szhekpisov/diffyml-action@v1
+  id: diff
+  with:
+    from: old.yaml
+    to: new.yaml
+    fail-on-diff: 'false'
+    output: github
+
+- if: steps.diff.outputs.has-differences == 'true'
+  run: echo "Configuration drift detected"
+```
+
+See the [action repo](https://github.com/szhekpisov/diffyml-action) for the full list of inputs and outputs.
 
 ### Kubernetes Support
 
@@ -243,33 +277,6 @@ git config diff.diffyml.command diffyml
 
 Color and truecolor are auto-forced (git's pager makes stdout a pipe). Use `--color never` to disable. `--set-exit-code` is silently ignored — git aborts external diff programs that exit non-zero. Parse errors are non-fatal: a warning is printed and git continues to the next file.
 
-### Filtering
-
-```bash
-# Show only changes under a specific path
-diffyml --filter spec.replicas old.yaml new.yaml
-
-# Exclude noisy paths
-diffyml --exclude metadata.annotations old.yaml new.yaml
-
-# Regex filtering
-diffyml --filter-regexp 'spec\.containers\[.*\]\.image' old.yaml new.yaml
-```
-
-### CI Integration
-
-Use `-s` / `--set-exit-code` to set the exit code based on differences:
-
-| Exit code | Meaning |
-|-----------|---------|
-| `0` | No differences (or success without `-s`) |
-| `1` | Differences detected (only with `-s`) |
-| `255` | Error occurred |
-
-```bash
-diffyml -s before.yaml after.yaml || echo "Config drift detected"
-```
-
 ### AI Summary
 
 Generate a natural language summary of changes using the Anthropic API:
@@ -288,6 +295,19 @@ diffyml --summary --summary-model claude-sonnet-4-5-20250514 old.yaml new.yaml
 ```
 
 The summary is appended after the standard diff output. If the API call fails, a warning is printed to stderr and the diff output is preserved. The exit code is never affected by summary success or failure.
+
+### Filtering
+
+```bash
+# Show only changes under a specific path
+diffyml --filter spec.replicas old.yaml new.yaml
+
+# Exclude noisy paths
+diffyml --exclude metadata.annotations old.yaml new.yaml
+
+# Regex filtering
+diffyml --filter-regexp 'spec\.containers\[.*\]\.image' old.yaml new.yaml
+```
 
 ### Configuration File
 
@@ -427,11 +447,13 @@ fmt.Print(formatter.Format(diffs, diffyml.DefaultFormatOptions()))
 
 See the [package documentation](https://pkg.go.dev/github.com/szhekpisov/diffyml/pkg/diffyml) for the full API reference.
 
-## Code Quality
+## Security & Code Quality
 
-Every push and PR is checked by:
+**Supply chain.** Releases are signed with [cosign](https://docs.sigstore.dev/) (keyless Sigstore), ship [SPDX](https://spdx.dev/) SBOMs for every artifact, and carry [SLSA Level 3](https://slsa.dev/spec/v1.0/levels#build-l3) build provenance. Published tags are immutable. See [Verifying Releases](#verifying-releases) for verification commands. The repo is tracked by [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/szhekpisov/diffyml) (badge above).
 
-- [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) — known vulnerability detection
+**Continuous checks.** Every push and PR is scanned by:
+
+- [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) — known vulnerability detection (runs on `main` weekly as well)
 - [zizmor](https://github.com/zizmorcore/zizmor-action) — GitHub Actions workflow security scanning
 - [golangci-lint](https://golangci-lint.run/) running:
   [errcheck](https://github.com/kisielk/errcheck),
@@ -442,7 +464,9 @@ Every push and PR is checked by:
   [misspell](https://github.com/client9/misspell),
   [staticcheck](https://staticcheck.dev/) (all checks except style conventions)
 
-1,500+ tests (unit, e2e, fuzz, property-based), 99.4% code coverage, 100% [mutation testing](https://github.com/go-gremlins/gremlins) efficacy (686/686 mutants killed). CI enforces a 99% coverage floor.
+**Test quality.** 1,500+ tests (unit, e2e, fuzz, property-based), 99.4% code coverage, 100% [mutation testing](https://github.com/go-gremlins/gremlins) efficacy (686/686 mutants killed). CI enforces a 99% coverage floor.
+
+**Reporting vulnerabilities.** See [SECURITY.md](SECURITY.md) — preferred path is a [private GitHub Security Advisory](https://github.com/szhekpisov/diffyml/security/advisories/new).
 
 ## Contributing
 
