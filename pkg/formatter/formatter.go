@@ -3,56 +3,47 @@ package formatter
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/diffyml/diffyml/pkg/diff"
 )
 
-// Format represents the output format type.
-type Format string
-
-const (
-	FormatText Format = "text"
-	FormatJSON Format = "json"
-)
-
-// TextFormatter writes a human-readable diff to w.
-type TextFormatter struct {
-	w io.Writer
+// Formatter is the interface all output formatters must implement.
+type Formatter interface {
+	Format(w io.Writer, changes []diff.Change) error
 }
 
-// NewTextFormatter creates a TextFormatter writing to w.
-func NewTextFormatter(w io.Writer) *TextFormatter {
-	return &TextFormatter{w: w}
+// TextFormatter formats changes as human-readable text.
+type TextFormatter struct{}
+
+// NewTextFormatter returns a new TextFormatter.
+func NewTextFormatter() *TextFormatter {
+	return &TextFormatter{}
 }
 
-// Write outputs the list of changes in plain-text format.
-func (f *TextFormatter) Write(changes []diff.Change) error {
+// Format writes text-formatted changes to w.
+func (f *TextFormatter) Format(w io.Writer, changes []diff.Change) error {
 	if len(changes) == 0 {
-		_, err := fmt.Fprintln(f.w, "No differences found.")
+		_, err := fmt.Fprintln(w, "No changes.")
 		return err
 	}
 	for _, c := range changes {
-		line, err := formatChange(c)
-		if err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintln(f.w, line); err != nil {
+		line := formatChange(c)
+		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func formatChange(c diff.Change) (string, error) {
-	path := strings.Join(c.Path, ".")
+func formatChange(c diff.Change) string {
 	switch c.Type {
 	case diff.Added:
-		return fmt.Sprintf("+ %s: %v", path, c.To), nil
+		return fmt.Sprintf("+ %s: %v", c.Path, c.NewValue)
 	case diff.Removed:
-		return fmt.Sprintf("- %s: %v", path, c.From), nil
+		return fmt.Sprintf("- %s: %v", c.Path, c.OldValue)
 	case diff.Modified:
-		return fmt.Sprintf("~ %s: %v -> %v", path, c.From, c.To), nil
+		return fmt.Sprintf("~ %s: %v -> %v", c.Path, c.OldValue, c.NewValue)
+	default:
+		return fmt.Sprintf("? %s", c.Path)
 	}
-	return "", fmt.Errorf("unknown change type: %v", c.Type)
 }

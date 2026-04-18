@@ -2,27 +2,18 @@ package formatter
 
 import (
 	"fmt"
-	"io"
-
-	"github.com/diffyml/diffyml/pkg/diff"
 )
 
-// Formatter is the common interface for all output formatters.
-type Formatter interface {
-	Format(changes []diff.Change) error
-}
-
 // New returns a Formatter for the given format name.
-// Supported values: "text", "json", "yaml".
-func New(format string, w io.Writer) (Formatter, error) {
+func New(format string) (Formatter, error) {
 	switch format {
-	case "text":
-		return NewTextFormatter(w), nil
+	case "text", "":
+		return NewTextFormatter(), nil
 	case "json":
-		return NewJSONFormatter(w), nil
+		return NewJSONFormatter(), nil
 	case "yaml":
-		return NewYAMLFormatter(w), nil
+		return NewYAMLFormatter(), nil
 	default:
-		return nil, fmt.Errorf("unknown formatter %q: supported formats are text, json, yaml", format)
+		return nil, fmt.Errorf("unsupported format %q: choose one of text, json, yaml", format)
 	}
 }
