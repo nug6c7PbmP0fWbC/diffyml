@@ -39,6 +39,7 @@ func (r *Result) HasChanges() bool {
 }
 
 // Summary returns a human-readable summary of the diff result.
+// Only added, removed, and modified changes are shown; unchanged lines are skipped.
 func (r *Result) Summary() string {
 	var sb strings.Builder
 	for _, c := range r.Changes {
@@ -50,6 +51,9 @@ func (r *Result) Summary() string {
 		case Modified:
 			fmt.Fprintf(&sb, "~ %s: %v -> %v\n", c.Path, c.OldVal, c.NewVal)
 		}
+	}
+	if sb.Len() == 0 {
+		return "(no changes)\n"
 	}
 	return sb.String()
 }
