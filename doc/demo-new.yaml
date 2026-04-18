@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: web-api
   namespace: production
+  labels:
+    app: web-api
+    helm.sh/chart: web-api-2.0.0
 spec:
   replicas: 3
   selector:

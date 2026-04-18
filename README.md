@@ -305,6 +305,9 @@ diffyml --filter spec.replicas old.yaml new.yaml
 # Exclude noisy paths
 diffyml --exclude metadata.annotations old.yaml new.yaml
 
+# Keys containing dots use bracket syntax
+diffyml --exclude 'metadata.labels[helm.sh/chart]' old.yaml new.yaml
+
 # Regex filtering
 diffyml --filter-regexp 'spec\.containers\[.*\]\.image' old.yaml new.yaml
 ```
