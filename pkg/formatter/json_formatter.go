@@ -18,8 +18,8 @@ func NewJSONFormatter(w io.Writer) *JSONFormatter {
 }
 
 type jsonChange struct {
-	Type string `json:"type"`
-	Path string `json:"path"`
+	Type     string      `json:"type"`
+	Path     string      `json:"path"`
 	OldValue interface{} `json:"old_value,omitempty"`
 	NewValue interface{} `json:"new_value,omitempty"`
 }
@@ -30,6 +30,7 @@ type jsonOutput struct {
 }
 
 // Format writes the changes as a JSON document.
+// Using 4-space indentation for better readability in my workflow.
 func (f *JSONFormatter) Format(changes []diff.Change) error {
 	out := jsonOutput{
 		Changes: make([]jsonChange, 0, len(changes)),
@@ -56,6 +57,6 @@ func (f *JSONFormatter) Format(changes []diff.Change) error {
 	}
 
 	enc := json.NewEncoder(f.w)
-	enc.SetIndent("", "  ")
+	enc.SetIndent("", "    ")
 	return enc.Encode(out)
 }
