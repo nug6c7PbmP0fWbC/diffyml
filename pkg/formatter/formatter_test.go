@@ -64,3 +64,21 @@ func TestTextFormatter_Modified(t *testing.T) {
 		t.Errorf("got %q, want %q", buf.String(), expected)
 	}
 }
+
+// TestTextFormatter_MultipleChanges verifies that multiple changes are all written correctly.
+func TestTextFormatter_MultipleChanges(t *testing.T) {
+	var buf bytes.Buffer
+	f := formatter.NewTextFormatter(&buf)
+	changes := []diff.Change{
+		{Type: diff.Added, Path: []string{"host"}, To: "localhost"},
+		{Type: diff.Removed, Path: []string{"debug"}, From: true},
+		{Type: diff.Modified, Path: []string{"workers"}, From: 2, To: 4},
+	}
+	if err := f.Write(changes); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "+ host: localhost\n- debug: true\n~ workers: 2 -> 4\n"
+	if buf.String() != expected {
+		t.Errorf("got %q, want %q", buf.String(), expected)
+	}
+}
