@@ -68,3 +68,23 @@ func TestMarkdownFormatter_Modified(t *testing.T) {
 		t.Errorf("expected markdown table format, got: %s", out)
 	}
 }
+
+// TestMarkdownFormatter_MultipleChanges verifies that all changes appear in the output
+// when multiple changes of different types are formatted together.
+func TestMarkdownFormatter_MultipleChanges(t *testing.T) {
+	f := NewMarkdownFormatter()
+	changes := []diff.Change{
+		{Path: "service.port", Type: diff.Added, OldValue: nil, NewValue: 9090},
+		{Path: "service.name", Type: diff.Removed, OldValue: "oldapp", NewValue: nil},
+		{Path: "app.version", Type: diff.Modified, OldValue: "1.0", NewValue: "3.0"},
+	}
+	out, err := f.Format(changes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{"service.port", "service.name", "app.version", "oldapp", "3.0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got: %s", want, out)
+		}
+	}
+}
