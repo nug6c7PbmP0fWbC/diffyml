@@ -30,7 +30,7 @@ type jsonOutput struct {
 }
 
 // Format writes the changes as a JSON document.
-// Using 4-space indentation for better readability in my workflow.
+// Using 2-space indentation - more compact and easier to read in terminals.
 func (f *JSONFormatter) Format(changes []diff.Change) error {
 	out := jsonOutput{
 		Changes: make([]jsonChange, 0, len(changes)),
@@ -57,6 +57,6 @@ func (f *JSONFormatter) Format(changes []diff.Change) error {
 	}
 
 	enc := json.NewEncoder(f.w)
-	enc.SetIndent("", "    ")
+	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }
