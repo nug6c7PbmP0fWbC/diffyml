@@ -27,6 +27,11 @@ func Apply(changes []diff.Change, opts Options) []diff.Change {
 		}
 		result = append(result, c)
 	}
+	// Return an empty slice instead of nil when no changes match, so callers
+	// can safely range over the result without a nil check.
+	if result == nil {
+		return []diff.Change{}
+	}
 	return result
 }
 
