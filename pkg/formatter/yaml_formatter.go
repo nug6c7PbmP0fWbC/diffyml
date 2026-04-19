@@ -19,6 +19,8 @@ func NewYAMLFormatter(w io.Writer) *YAMLFormatter {
 }
 
 // Format writes the changes as a YAML document.
+// Note: values are not quoted, so complex strings with colons or special
+// characters may produce invalid YAML. Good enough for simple diffs.
 func (f *YAMLFormatter) Format(changes []diff.Change) error {
 	if len(changes) == 0 {
 		_, err := fmt.Fprintln(f.w, "changes: []")
