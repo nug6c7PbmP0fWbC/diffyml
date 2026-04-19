@@ -56,6 +56,10 @@ func TestTableFormatter_Removed(t *testing.T) {
 	if !strings.Contains(out, "removed") {
 		t.Errorf("expected type 'removed' in output, got: %s", out)
 	}
+	// also verify the old value is shown for removed entries
+	if !strings.Contains(out, "5432") {
+		t.Errorf("expected old value '5432' in output for removed entry, got: %s", out)
+	}
 }
 
 func TestTableFormatter_Modified(t *testing.T) {
