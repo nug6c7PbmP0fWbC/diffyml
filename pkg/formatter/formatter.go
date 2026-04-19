@@ -23,7 +23,7 @@ func NewTextFormatter() *TextFormatter {
 // Format writes text-formatted changes to w.
 func (f *TextFormatter) Format(w io.Writer, changes []diff.Change) error {
 	if len(changes) == 0 {
-		_, err := fmt.Fprintln(w, "No changes.")
+		_, err := fmt.Fprintln(w, "No changes detected.")
 		return err
 	}
 	for _, c := range changes {
@@ -42,8 +42,9 @@ func formatChange(c diff.Change) string {
 	case diff.Removed:
 		return fmt.Sprintf("- %s: %v", c.Path, c.OldValue)
 	case diff.Modified:
+		// Show old -> new for modified fields; clearer than just listing new value
 		return fmt.Sprintf("~ %s: %v -> %v", c.Path, c.OldValue, c.NewValue)
 	default:
-		return fmt.Sprintf("? %s", c.Path)
+		return fmt.Sprintf("? %s (unknown change type)", c.Path)
 	}
 }
