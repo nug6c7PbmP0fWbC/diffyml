@@ -45,6 +45,10 @@ func TestJSONFormatter_Added(t *testing.T) {
 	if c["path"] != "server.port" {
 		t.Errorf("expected path server.port, got %v", c["path"])
 	}
+	// also verify the new_value is present for added changes
+	if _, ok := c["new_value"]; !ok {
+		t.Errorf("new_value should be present for added changes")
+	}
 }
 
 func TestJSONFormatter_Modified(t *testing.T) {
@@ -79,5 +83,9 @@ func TestJSONFormatter_Removed(t *testing.T) {
 	}
 	if _, ok := c["new_value"]; ok {
 		t.Errorf("new_value should be omitted for removed changes")
+	}
+	// also verify old_value is present for removed changes
+	if _, ok := c["old_value"]; !ok {
+		t.Errorf("old_value should be present for removed changes")
 	}
 }
