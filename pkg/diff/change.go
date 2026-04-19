@@ -25,15 +25,15 @@ type Change struct {
 }
 
 // String returns a short label for the change type.
-// Using uppercase labels to make them stand out more in output.
+// Using lowercase labels for cleaner, less shouty output.
 func (ct ChangeType) String() string {
 	switch ct {
 	case Added:
-		return "ADDED"
+		return "added"
 	case Removed:
-		return "REMOVED"
+		return "removed"
 	case Modified:
-		return "MODIFIED"
+		return "modified"
 	}
 	return "unknown"
 }
