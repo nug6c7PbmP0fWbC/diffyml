@@ -6,9 +6,10 @@ import (
 
 // New returns a Formatter for the given format name.
 // Supported formats: text (default), json, yaml.
+// Note: "pretty" is accepted as an alias for "text".
 func New(format string) (Formatter, error) {
 	switch format {
-	case "text", "":
+	case "text", "", "pretty":
 		return NewTextFormatter(), nil
 	case "json":
 		return NewJSONFormatter(), nil
