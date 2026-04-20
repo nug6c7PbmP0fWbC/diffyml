@@ -16,7 +16,8 @@ const version = "0.1.0"
 
 func main() {
 	var (
-		format      = flag.String("format", "text", "Output format: text, json, yaml, markdown, table")
+		// Default to table format for easier readability in the terminal
+		format      = flag.String("format", "table", "Output format: text, json, yaml, markdown, table")
 		filterPath  = flag.String("filter-path", "", "Filter changes by path prefix (e.g. 'server.host')")
 		filterType  = flag.String("filter-type", "", "Filter changes by type: added, removed, modified")
 		showVersion = flag.Bool("version", false, "Print version and exit")
