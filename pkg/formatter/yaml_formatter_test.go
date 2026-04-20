@@ -47,6 +47,10 @@ func TestYAMLFormatter_Removed(t *testing.T) {
 	if !strings.Contains(out, "old_value: true") {
 		t.Errorf("missing old_value: %s", out)
 	}
+	// Also verify that removed changes don't include a new_value field
+	if strings.Contains(out, "new_value:") {
+		t.Errorf("removed change should not have new_value: %s", out)
+	}
 }
 
 func TestYAMLFormatter_Modified(t *testing.T) {
