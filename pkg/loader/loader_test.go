@@ -18,6 +18,7 @@ func TestParseBytes_Valid(t *testing.T) {
 	if !ok {
 		t.Fatal("expected nested to be a map")
 	}
+	// Note: gopkg.in/yaml.v2 unmarshals integers as int, not int64
 	if nested["inner"] != 42 {
 		t.Errorf("expected inner=42, got %v", nested["inner"])
 	}
@@ -62,5 +63,23 @@ func TestLoadFile_Valid(t *testing.T) {
 	}
 	if m["hello"] != "world" {
 		t.Errorf("expected hello=world, got %v", m["hello"])
+	}
+}
+
+// TestLoadFile_EmptyFile verifies that loading an empty YAML file returns an empty map without error.
+func TestLoadFile_EmptyFile(t *testing.T) {
+	f, err := os.CreateTemp("", "diffyml-empty-*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	m, err := LoadFile(f.Name())
+	if err != nil {
+		t.Fatalf("unexpected error for empty file: %v", err)
+	}
+	if len(m) != 0 {
+		t.Errorf("expected empty map for empty file, got %v", m)
 	}
 }
