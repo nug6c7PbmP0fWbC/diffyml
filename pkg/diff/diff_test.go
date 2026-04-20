@@ -80,6 +80,16 @@ func TestCompare_NoChanges(t *testing.T) {
 	}
 }
 
+// TestCompare_EmptyMaps verifies that comparing two empty maps produces no changes.
+func TestCompare_EmptyMaps(t *testing.T) {
+	oldMap := map[string]interface{}{}
+	newMap := map[string]interface{}{}
+	result := Compare(oldMap, newMap)
+	if result.HasChanges() {
+		t.Error("expected no changes for two empty maps")
+	}
+}
+
 func TestSummary(t *testing.T) {
 	result := &Result{
 		Changes: []Change{
