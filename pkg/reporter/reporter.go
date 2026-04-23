@@ -1,37 +1,53 @@
 package reporter
 
 import (
+	"fmt"
 	"io"
 
-	"github.com/diffyml/diffyml/pkg/diff"
-	"github.com/diffyml/diffyml/pkg/filter"
-	"github.com/diffyml/diffyml/pkg/formatter"
+	"github.com/szhekpisov/diffyml/pkg/diff"
+	"github.com/szhekpisov/diffyml/pkg/filter"
+	"github.com/szhekpisov/diffyml/pkg/formatter"
 )
 
-// Config holds reporter configuration.
+// Config holds the options for a Reporter.
 type Config struct {
-	Format    string
-	FilterCfg filter.Config
+	Format     string
+	FilterPath string
+	FilterType string
 }
 
-// Reporter orchestrates diffing, filtering, and formatting.
+// Reporter compares two YAML documents and writes a formatted diff report.
 type Reporter struct {
-	cfg       Config
-	formatter formatter.Formatter
+	cfg Config
 }
 
-// New creates a new Reporter with the given config.
-func New(cfg Config) (*Reporter, error) {
-	f, err := formatter.New(cfg.Format)
+// New creates a Reporter with the given Config.
+func New(cfg Config) *Reporter {
+	return &Reporter{cfg: cfg}
+}
+
+// Run compares old and new YAML maps, applies optional filters, formats the
+// result using the configured formatter, and writes the output to w.
+func (r *Reporter) Run(old, new map[string]interface{}, w io.Writer) error {
+	changes, err := diff.Compare(old, new)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("reporter: compare: %w", err)
 	}
-	return &Reporter{cfg: cfg, formatter: f}, nil
-}
 
-// Report compares two YAML node maps, applies filters, and writes formatted output.
-func (r *Reporter) Report(w io.Writer, a, b map[string]interface{}) error {
-	changes := diff.Compare(a, b)
-	changes = filter.Apply(changes, r.cfg.FilterCfg)
-	return r.formatter.Format(w, changes)
+	if r.cfg.FilterPath != "" || r.cfg.FilterType != "" {
+		changes = filter.Apply(changes, r.cfg.FilterPath, r.cfg.FilterType)
+	}
+
+	fmt, err := formatter.New(r.cfg.Format)
+	if err != nil {
+		return fmt.Errorf("reporter: formatter: %w", err)
+	}
+
+	output, err := fmt.Format(changes)
+	if err != nil {
+		return fmt.Errorf("reporter: format: %w", err)
+	}
+
+	_, err = w.Write([]byte(output))
+	return err
 }
