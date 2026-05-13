@@ -1,94 +1,57 @@
+// Package diff provides utilities for comparing YAML documents.
 package diff
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
-// ChangeType represents the type of change in a diff.
-type ChangeType string
-
-const (
-	Added    ChangeType = "added"
-	Removed  ChangeType = "removed"
-	Modified ChangeType = "modified"
-	Unchanged ChangeType = "unchanged"
-)
-
-// Change represents a single change between two YAML values.
-type Change struct {
-	Path   string
-	Type   ChangeType
-	OldVal interface{}
-	NewVal interface{}
+// Compare returns a list of Changes between two YAML maps.
+func Compare(base, head map[string]interface{}) []Change {
+	return compareNodes(base, head, "")
 }
 
-// Result holds all changes between two YAML documents.
-type Result struct {
-	Changes []Change
-}
+func compareNodes(base, head map[string]interface{}, prefix string) []Change {
+	var changes []Change
 
-// HasChanges returns true if there are any non-unchanged entries.
-func (r *Result) HasChanges() bool {
-	for _, c := range r.Changes {
-		if c.Type != Unchanged {
-			return true
-		}
-	}
-	return false
-}
-
-// Summary returns a human-readable summary of the diff result.
-// Only added, removed, and modified changes are shown; unchanged lines are skipped.
-func (r *Result) Summary() string {
-	var sb strings.Builder
-	for _, c := range r.Changes {
-		switch c.Type {
-		case Added:
-			fmt.Fprintf(&sb, "+ %s: %v\n", c.Path, c.NewVal)
-		case Removed:
-			fmt.Fprintf(&sb, "- %s: %v\n", c.Path, c.OldVal)
-		case Modified:
-			fmt.Fprintf(&sb, "~ %s: %v -> %v\n", c.Path, c.OldVal, c.NewVal)
-		}
-	}
-	if sb.Len() == 0 {
-		return "(no changes)\n"
-	}
-	return sb.String()
-}
-
-// Compare performs a deep diff between two parsed YAML maps.
-func Compare(oldMap, newMap map[string]interface{}) *Result {
-	result := &Result{}
-	compareNodes("", oldMap, newMap, result)
-	return result
-}
-
-func compareNodes(prefix string, oldMap, newMap map[string]interface{}, result *Result) {
-	for key, oldVal := range oldMap {
-		path := joinPath(prefix, key)
-		newVal, exists := newMap[key]
-		if !exists {
-			result.Changes = append(result.Changes, Change{Path: path, Type: Removed, OldVal: oldVal})
+	for k, bv := range base {
+		path := joinPath(prefix, k)
+		hv, ok := head[k]
+		if !ok {
+			changes = append(changes, Change{
+				Type:   ChangeRemoved,
+				Path:   path,
+				Before: bv,
+				After:  nil,
+			})
 			continue
 		}
-		oldNested, oldIsMap := oldVal.(map[string]interface{})
-		newNested, newIsMap := newVal.(map[string]interface{})
-		if oldIsMap && newIsMap {
-			compareNodes(path, oldNested, newNested, result)
-		} else if fmt.Sprintf("%v", oldVal) != fmt.Sprintf("%v", newVal) {
-			result.Changes = append(result.Changes, Change{Path: path, Type: Modified, OldVal: oldVal, NewVal: newVal})
-		} else {
-			result.Changes = append(result.Changes, Change{Path: path, Type: Unchanged, OldVal: oldVal, NewVal: newVal})
+		bMap, bIsMap := bv.(map[string]interface{})
+		hMap, hIsMap := hv.(map[string]interface{})
+		if bIsMap && hIsMap {
+			changes = append(changes, compareNodes(bMap, hMap, path)...)
+			continue
+		}
+		if fmt.Sprintf("%v", bv) != fmt.Sprintf("%v", hv) {
+			changes = append(changes, Change{
+				Type:   ChangeModified,
+				Path:   path,
+				Before: bv,
+				After:  hv,
+			})
 		}
 	}
-	for key, newVal := range newMap {
-		if _, exists := oldMap[key]; !exists {
-			path := joinPath(prefix, key)
-			result.Changes = append(result.Changes, Change{Path: path, Type: Added, NewVal: newVal})
+
+	for k, hv := range head {
+		path := joinPath(prefix, k)
+		if _, ok := base[k]; !ok {
+			changes = append(changes, Change{
+				Type:   ChangeAdded,
+				Path:   path,
+				Before: nil,
+				After:  hv,
+			})
 		}
 	}
+
+	return changes
 }
 
 func joinPath(prefix, key string) string {
