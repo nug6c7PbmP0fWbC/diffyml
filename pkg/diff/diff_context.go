@@ -1,55 +1,57 @@
 package diff
 
-// ContextOptions controls how many surrounding unchanged lines
-// (or sibling keys) are retained around each change when producing
-// a context-aware view of the diff.
+// ContextOptions configures the WithContext function.
 type ContextOptions struct {
-	// Lines is the number of neighbouring changes to include on each
-	// side of a real change. Defaults to 2.
+	// Lines is the number of surrounding (non-changed) neighbours to include
+	// on each side of every changed entry.
 	Lines int
 }
 
-// DefaultContextOptions returns a ContextOptions with sensible defaults.
+// DefaultContextOptions returns sensible defaults.
 func DefaultContextOptions() ContextOptions {
-	return ContextOptions{
-		Lines: 2,
-	}
+	return ContextOptions{Lines: 2}
 }
 
-// WithContext returns a new slice that includes each change together with up
-// to opts.Lines neighbouring changes on either side. Duplicates that would
-// appear because two windows overlap are collapsed automatically.
+// WithContext returns a new slice that contains every changed entry from
+// changes plus up to opts.Lines unchanged neighbours on either side.
+// Neighbours are taken from the ordered all slice which must contain the
+// full, ordered set of changes (both changed and unchanged).
 //
-// The order of the input slice is preserved.
-func WithContext(changes []Change, opts ContextOptions) []Change {
-	if len(changes) == 0 {
-		return []Change{}
+// If all is nil or empty the function simply returns the original changes
+// slice unchanged.
+func WithContext(changes []Change, all []Change, opts ContextOptions) []Change {
+	if len(all) == 0 || opts.Lines <= 0 {
+		return changes
 	}
 
-	lines := opts.Lines
-	if lines < 0 {
-		lines = 0
-	}
-
-	seen := make(map[int]struct{})
-	var result []Change
-
-	for i := range changes {
-		start := i - lines
-		if start < 0 {
-			start = 0
-		}
-		end := i + lines
-		if end >= len(changes) {
-			end = len(changes) - 1
-		}
-		for j := start; j <= end; j++ {
-			if _, ok := seen[j]; !ok {
-				seen[j] = struct{}{}
-				result = append(result, changes[j])
+	// Build a set of indices that are already "changed".
+	changedIdx := make(map[int]bool)
+	for i, c := range all {
+		for _, ch := range changes {
+			if c.Path == ch.Path && c.Type == ch.Type {
+				changedIdx[i] = true
+				break
 			}
 		}
 	}
 
-	return result
+	// Expand the set with neighbours.
+	include := make(map[int]bool)
+	for idx := range changedIdx {
+		for d := -opts.Lines; d <= opts.Lines; d++ {
+			n := idx + d
+			if n >= 0 && n < len(all) {
+				include[n] = true
+			}
+		}
+	}
+
+	// Collect in original order, deduplicating.
+	out := make([]Change, 0, len(include))
+	for i, c := range all {
+		if include[i] {
+			out = append(out, c)
+		}
+	}
+	return out
 }
