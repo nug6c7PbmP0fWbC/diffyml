@@ -1,49 +1,41 @@
 package diff
 
-import "strings"
-
-// EnrichRule defines a rule for attaching metadata to matching changes.
+// EnrichRule defines a rule for attaching extra metadata to matching changes.
 type EnrichRule struct {
 	// PathPrefix restricts the rule to changes whose path starts with this prefix.
-	// Empty string matches all paths.
+	// An empty string matches all paths.
 	PathPrefix string
-
-	// Type restricts the rule to a specific change type ("added", "removed", "modified").
-	// Empty string matches all types.
-	Type string
-
-	// Meta is the key/value metadata to attach to matching changes.
+	// Type restricts the rule to a specific ChangeType.
+	// An empty string matches all types.
+	Type ChangeType
+	// Meta is the key/value metadata to merge into the change's Metadata map.
 	Meta map[string]string
 }
 
-// EnrichedChange wraps a Change with additional metadata produced by Enrich.
-type EnrichedChange struct {
-	Change
-	Meta map[string]string
-}
-
-// Enrich applies the given rules to each change and returns a slice of
-// EnrichedChange values. Rules are applied in order; later rules may add
-// or overwrite keys set by earlier rules.
-func Enrich(changes []Change, rules []EnrichRule) []EnrichedChange {
-	out := make([]EnrichedChange, 0, len(changes))
-	for _, c := range changes {
-		ec := EnrichedChange{
-			Change: c,
-			Meta:   map[string]string{},
-		}
+// Enrich attaches extra metadata to changes that match the supplied rules.
+// Rules are evaluated in order; all matching rules are applied (last write wins
+// for duplicate keys within Meta).
+func Enrich(changes []Change, rules []EnrichRule) []Change {
+	if len(rules) == 0 || len(changes) == 0 {
+		return changes
+	}
+	out := make([]Change, len(changes))
+	for i, c := range changes {
 		for _, r := range rules {
 			if !matchEnrichPath(c.Path, r.PathPrefix) {
 				continue
 			}
-			if r.Type != "" && !strings.EqualFold(string(c.Type), r.Type) {
+			if r.Type != "" && r.Type != c.Type {
 				continue
 			}
+			if c.Metadata == nil {
+				c.Metadata = make(map[string]string)
+			}
 			for k, v := range r.Meta {
-				ec.Meta[k] = v
+				c.Metadata[k] = v
 			}
 		}
-		out = append(out, ec)
+		out[i] = c
 	}
 	return out
 }
@@ -52,5 +44,8 @@ func matchEnrichPath(path, prefix string) bool {
 	if prefix == "" {
 		return true
 	}
-	return path == prefix || strings.HasPrefix(path, prefix+".")
+	if path == prefix {
+		return true
+	}
+	return len(path) > len(prefix) && path[:len(prefix)] == prefix && path[len(prefix)] == '.'
 }

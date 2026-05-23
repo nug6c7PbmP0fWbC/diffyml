@@ -5,85 +5,87 @@ import (
 )
 
 func TestEnrich_NoRules(t *testing.T) {
-	changes := []Change{
-		{Path: "a.b", Type: ChangeTypeAdded, Value: "v"},
-	}
-	result := Enrich(changes, nil)
-	if len(result) != 1 {
-		t.Fatalf("expected 1 enriched change, got %d", len(result))
-	}
-	if len(result[0].Meta) != 0 {
-		t.Errorf("expected empty meta, got %v", result[0].Meta)
+	changes := []Change{{Path: "a", Type: ChangeAdded}}
+	out := Enrich(changes, nil)
+	if len(out) != 1 || out[0].Metadata != nil {
+		t.Fatal("expected unchanged change with no rules")
 	}
 }
 
 func TestEnrich_MatchAll(t *testing.T) {
 	changes := []Change{
-		{Path: "x", Type: ChangeTypeAdded, Value: "1"},
-		{Path: "y", Type: ChangeTypeRemoved, Value: "2"},
+		{Path: "a", Type: ChangeAdded},
+		{Path: "b", Type: ChangeRemoved},
 	}
 	rules := []EnrichRule{
-		{Meta: map[string]string{"owner": "team-a"}},
+		{Meta: map[string]string{"env": "prod"}},
 	}
-	result := Enrich(changes, rules)
-	for _, ec := range result {
-		if ec.Meta["owner"] != "team-a" {
-			t.Errorf("expected owner=team-a, got %q", ec.Meta["owner"])
+	out := Enrich(changes, rules)
+	for _, c := range out {
+		if c.Metadata["env"] != "prod" {
+			t.Errorf("path %s: expected env=prod, got %v", c.Path, c.Metadata)
 		}
 	}
 }
 
 func TestEnrich_FilterByType(t *testing.T) {
 	changes := []Change{
-		{Path: "a", Type: ChangeTypeAdded, Value: "1"},
-		{Path: "b", Type: ChangeTypeRemoved, Value: "2"},
+		{Path: "a", Type: ChangeAdded},
+		{Path: "b", Type: ChangeRemoved},
 	}
 	rules := []EnrichRule{
-		{Type: "added", Meta: map[string]string{"flag": "new"}},
+		{Type: ChangeAdded, Meta: map[string]string{"tag": "new"}},
 	}
-	result := Enrich(changes, rules)
-	if result[0].Meta["flag"] != "new" {
-		t.Errorf("expected flag=new for added change")
+	out := Enrich(changes, rules)
+	if out[0].Metadata["tag"] != "new" {
+		t.Errorf("expected tag=new on added change")
 	}
-	if _, ok := result[1].Meta["flag"]; ok {
-		t.Errorf("removed change should not have flag meta")
+	if out[1].Metadata != nil && out[1].Metadata["tag"] != "" {
+		t.Errorf("expected no tag on removed change")
 	}
 }
 
 func TestEnrich_FilterByPathPrefix(t *testing.T) {
 	changes := []Change{
-		{Path: "db.host", Type: ChangeTypeModified, Value: "new"},
-		{Path: "app.port", Type: ChangeTypeModified, Value: "8080"},
+		{Path: "db.host", Type: ChangeModified},
+		{Path: "app.name", Type: ChangeModified},
 	}
 	rules := []EnrichRule{
-		{PathPrefix: "db", Meta: map[string]string{"sensitive": "true"}},
+		{PathPrefix: "db", Meta: map[string]string{"owner": "dba"}},
 	}
-	result := Enrich(changes, rules)
-	if result[0].Meta["sensitive"] != "true" {
-		t.Errorf("expected sensitive=true for db.host")
+	out := Enrich(changes, rules)
+	if out[0].Metadata["owner"] != "dba" {
+		t.Errorf("expected owner=dba on db.host")
 	}
-	if _, ok := result[1].Meta["sensitive"]; ok {
-		t.Errorf("app.port should not be sensitive")
+	if out[1].Metadata != nil && out[1].Metadata["owner"] != "" {
+		t.Errorf("expected no owner on app.name")
 	}
 }
 
 func TestEnrich_MultipleRules_LastWins(t *testing.T) {
-	changes := []Change{
-		{Path: "cfg.key", Type: ChangeTypeAdded, Value: "v"},
-	}
+	changes := []Change{{Path: "x", Type: ChangeAdded}}
 	rules := []EnrichRule{
-		{Meta: map[string]string{"tier": "low"}},
-		{PathPrefix: "cfg", Meta: map[string]string{"tier": "high"}},
+		{Meta: map[string]string{"priority": "low"}},
+		{Meta: map[string]string{"priority": "high"}},
 	}
-	result := Enrich(changes, rules)
-	if result[0].Meta["tier"] != "high" {
-		t.Errorf("expected tier=high (last rule wins), got %q", result[0].Meta["tier"])
+	out := Enrich(changes, rules)
+	if out[0].Metadata["priority"] != "high" {
+		t.Errorf("expected last rule to win, got %v", out[0].Metadata["priority"])
 	}
 }
 
-func TestEnrich_EmptyChanges(t *testing.T) {
-	result := Enrich(nil, []EnrichRule{{Meta: map[string]string{"k": "v"}}})
-	if len(result) != 0 {
-		t.Errorf("expected empty result for nil changes")
+func TestEnrich_PreservesExistingMetadata(t *testing.T) {
+	changes := []Change{
+		{Path: "a", Type: ChangeAdded, Metadata: map[string]string{"existing": "yes"}},
+	}
+	rules := []EnrichRule{
+		{Meta: map[string]string{"new": "val"}},
+	}
+	out := Enrich(changes, rules)
+	if out[0].Metadata["existing"] != "yes" {
+		t.Errorf("expected existing metadata to be preserved")
+	}
+	if out[0].Metadata["new"] != "val" {
+		t.Errorf("expected new metadata to be added")
 	}
 }
