@@ -1,57 +1,61 @@
 package diff
 
-// ContextOptions configures the WithContext function.
-type ContextOptions struct {
-	// Lines is the number of surrounding (non-changed) neighbours to include
-	// on each side of every changed entry.
-	Lines int
-}
-
-// DefaultContextOptions returns sensible defaults.
+// DefaultContextOptions returns a ContextOptions with sensible defaults.
 func DefaultContextOptions() ContextOptions {
-	return ContextOptions{Lines: 2}
+	return ContextOptions{
+		Before: 2,
+		After:  2,
+	}
 }
 
-// WithContext returns a new slice that contains every changed entry from
-// changes plus up to opts.Lines unchanged neighbours on either side.
-// Neighbours are taken from the ordered all slice which must contain the
-// full, ordered set of changes (both changed and unchanged).
-//
-// If all is nil or empty the function simply returns the original changes
-// slice unchanged.
-func WithContext(changes []Change, all []Change, opts ContextOptions) []Change {
-	if len(all) == 0 || opts.Lines <= 0 {
-		return changes
+// ContextOptions controls how many surrounding (unchanged) changes are
+// included around each real change.
+type ContextOptions struct {
+	// Before is the number of preceding changes to include.
+	Before int
+	// After is the number of following changes to include.
+	After int
+}
+
+// WithContext returns a new slice that contains every change that is within
+// opts.Before or opts.After positions of a "real" (non-context) change.
+// Changes that were already present are tagged with metadata key "context"
+// set to true so formatters can render them differently.
+func WithContext(changes []Change, opts ContextOptions) []Change {
+	if len(changes) == 0 {
+		return nil
 	}
 
-	// Build a set of indices that are already "changed".
-	changedIdx := make(map[int]bool)
-	for i, c := range all {
-		for _, ch := range changes {
-			if c.Path == ch.Path && c.Type == ch.Type {
-				changedIdx[i] = true
-				break
+	include := make([]bool, len(changes))
+
+	for i, c := range changes {
+		if c.Type == ChangeAdded || c.Type == ChangeRemoved || c.Type == ChangeModified {
+			include[i] = true
+			for b := 1; b <= opts.Before; b++ {
+				if i-b >= 0 {
+					include[i-b] = true
+				}
+			}
+			for a := 1; a <= opts.After; a++ {
+				if i+a < len(changes) {
+					include[i+a] = true
+				}
 			}
 		}
 	}
 
-	// Expand the set with neighbours.
-	include := make(map[int]bool)
-	for idx := range changedIdx {
-		for d := -opts.Lines; d <= opts.Lines; d++ {
-			n := idx + d
-			if n >= 0 && n < len(all) {
-				include[n] = true
+	out := make([]Change, 0, len(changes))
+	for i, c := range changes {
+		if !include[i] {
+			continue
+		}
+		if c.Type != ChangeAdded && c.Type != ChangeRemoved && c.Type != ChangeModified {
+			if c.Metadata == nil {
+				c.Metadata = map[string]interface{}{}
 			}
+			c.Metadata["context"] = true
 		}
-	}
-
-	// Collect in original order, deduplicating.
-	out := make([]Change, 0, len(include))
-	for i, c := range all {
-		if include[i] {
-			out = append(out, c)
-		}
+		out = append(out, c)
 	}
 	return out
 }

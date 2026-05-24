@@ -2,53 +2,44 @@ package formatter
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/szhekpisov/diffyml/pkg/diff"
 )
 
-// NewContextFormatter returns a Formatter that renders changes with
-// surrounding context lines, similar to a unified diff view.
-// opts controls how many neighbouring changes are shown around each change.
-func NewContextFormatter(opts diff.ContextOptions) Formatter {
-	return func(w io.Writer, changes []diff.Change) error {
-		if len(changes) == 0 {
-			_, err := fmt.Fprintln(w, "(no changes)")
-			return err
-		}
+// NewContextFormatter returns a Formatter that renders changes produced by
+// diff.WithContext, visually distinguishing context lines from real changes.
+func NewContextFormatter() Formatter {
+	return &contextFormatter{}
+}
 
-		contextual := diff.WithContext(changes, opts)
+type contextFormatter struct{}
 
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("--- context diff (±%d lines) ---\n", opts.Lines))
-
-		for _, c := range contextual {
-			var symbol string
-			switch c.Type {
-			case diff.Added:
-				symbol = "+"
-			case diff.Removed:
-				symbol = "-"
-			case diff.Modified:
-				symbol = "~"
-			default:
-				symbol = " "
-			}
-
-			switch c.Type {
-			case diff.Added:
-				sb.WriteString(fmt.Sprintf("%s %s: %v\n", symbol, c.Path, c.After))
-			case diff.Removed:
-				sb.WriteString(fmt.Sprintf("%s %s: %v\n", symbol, c.Path, c.Before))
-			case diff.Modified:
-				sb.WriteString(fmt.Sprintf("%s %s: %v -> %v\n", symbol, c.Path, c.Before, c.After))
-			default:
-				sb.WriteString(fmt.Sprintf("%s %s\n", symbol, c.Path))
-			}
-		}
-
-		_, err := io.WriteString(w, sb.String())
-		return err
+func (f *contextFormatter) Format(changes []diff.Change) (string, error) {
+	if len(changes) == 0 {
+		return "(no changes in context window)\n", nil
 	}
+
+	var sb strings.Builder
+	sb.WriteString("=== context diff ===\n")
+
+	for _, c := range changes {
+		isCtx := c.Metadata != nil && c.Metadata["context"] == true
+		if isCtx {
+			sb.WriteString(fmt.Sprintf("  ~ %s\n", c.Path))
+			continue
+		}
+		switch c.Type {
+		case diff.ChangeAdded:
+			sb.WriteString(fmt.Sprintf("  + %s: %v\n", c.Path, c.After))
+		case diff.ChangeRemoved:
+			sb.WriteString(fmt.Sprintf("  - %s: %v\n", c.Path, c.Before))
+		case diff.ChangeModified:
+			sb.WriteString(fmt.Sprintf("  ~ %s: %v -> %v\n", c.Path, c.Before, c.After))
+		default:
+			sb.WriteString(fmt.Sprintf("    %s\n", c.Path))
+		}
+	}
+
+	return sb.String(), nil
 }
