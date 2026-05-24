@@ -7,39 +7,44 @@ import (
 	"github.com/szhekpisov/diffyml/pkg/diff"
 )
 
-// NewContextFormatter returns a Formatter that renders changes produced by
-// diff.WithContext, visually distinguishing context lines from real changes.
+// NewContextFormatter returns a Formatter that renders a context-aware diff,
+// visually distinguishing real changes from surrounding context lines.
 func NewContextFormatter() Formatter {
-	return &contextFormatter{}
-}
-
-type contextFormatter struct{}
-
-func (f *contextFormatter) Format(changes []diff.Change) (string, error) {
-	if len(changes) == 0 {
-		return "(no changes in context window)\n", nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("=== context diff ===\n")
-
-	for _, c := range changes {
-		isCtx := c.Metadata != nil && c.Metadata["context"] == true
-		if isCtx {
-			sb.WriteString(fmt.Sprintf("  ~ %s\n", c.Path))
-			continue
+	return FormatterFunc(func(changes []diff.Change) (string, error) {
+		if len(changes) == 0 {
+			return "(no changes)\n", nil
 		}
-		switch c.Type {
-		case diff.ChangeAdded:
-			sb.WriteString(fmt.Sprintf("  + %s: %v\n", c.Path, c.After))
-		case diff.ChangeRemoved:
-			sb.WriteString(fmt.Sprintf("  - %s: %v\n", c.Path, c.Before))
-		case diff.ChangeModified:
-			sb.WriteString(fmt.Sprintf("  ~ %s: %v -> %v\n", c.Path, c.Before, c.After))
-		default:
-			sb.WriteString(fmt.Sprintf("    %s\n", c.Path))
-		}
-	}
 
-	return sb.String(), nil
+		var sb strings.Builder
+		sb.WriteString("--- context diff ---\n")
+
+		prevWasContext := false
+		for _, c := range changes {
+			isCtx := c.Metadata != nil && c.Metadata["context"] == true
+
+			if isCtx && !prevWasContext {
+				// no separator needed at start
+			} else if !isCtx && prevWasContext {
+				// transitioning from context back to real change — no separator
+			}
+
+			if isCtx {
+				sb.WriteString(fmt.Sprintf("  %s\n", c.Path))
+			} else {
+				switch c.Type {
+				case diff.Added:
+					sb.WriteString(fmt.Sprintf("+ %s: %v\n", c.Path, c.Value))
+				case diff.Removed:
+					sb.WriteString(fmt.Sprintf("- %s: %v\n", c.Path, c.Before))
+				case diff.Modified:
+					sb.WriteString(fmt.Sprintf("~ %s: %v -> %v\n", c.Path, c.Before, c.Value))
+				default:
+					sb.WriteString(fmt.Sprintf("  %s\n", c.Path))
+				}
+			}
+			prevWasContext = isCtx
+		}
+
+		return sb.String(), nil
+	})
 }

@@ -8,37 +8,37 @@ func DefaultContextOptions() ContextOptions {
 	}
 }
 
-// ContextOptions controls how many surrounding (unchanged) changes are
-// included around each real change.
+// ContextOptions controls how many surrounding (unchanged) changes are included
+// around each real change when calling WithContext.
 type ContextOptions struct {
-	// Before is the number of preceding changes to include.
+	// Before is the number of preceding changes to include as context.
 	Before int
-	// After is the number of following changes to include.
+	// After is the number of following changes to include as context.
 	After int
 }
 
-// WithContext returns a new slice that contains every change that is within
-// opts.Before or opts.After positions of a "real" (non-context) change.
-// Changes that were already present are tagged with metadata key "context"
-// set to true so formatters can render them differently.
+// WithContext returns a new slice that includes the original changes plus
+// neighbouring context entries marked with metadata key "context": true.
+// Changes that are already in the input are preserved as-is; only the
+// surrounding entries receive the context marker.
 func WithContext(changes []Change, opts ContextOptions) []Change {
 	if len(changes) == 0 {
-		return nil
+		return changes
 	}
 
-	include := make([]bool, len(changes))
+	included := make([]bool, len(changes))
 
 	for i, c := range changes {
-		if c.Type == ChangeAdded || c.Type == ChangeRemoved || c.Type == ChangeModified {
-			include[i] = true
+		if c.Type == Added || c.Type == Removed || c.Type == Modified {
+			included[i] = true
 			for b := 1; b <= opts.Before; b++ {
 				if i-b >= 0 {
-					include[i-b] = true
+					included[i-b] = true
 				}
 			}
 			for a := 1; a <= opts.After; a++ {
 				if i+a < len(changes) {
-					include[i+a] = true
+					included[i+a] = true
 				}
 			}
 		}
@@ -46,10 +46,10 @@ func WithContext(changes []Change, opts ContextOptions) []Change {
 
 	out := make([]Change, 0, len(changes))
 	for i, c := range changes {
-		if !include[i] {
+		if !included[i] {
 			continue
 		}
-		if c.Type != ChangeAdded && c.Type != ChangeRemoved && c.Type != ChangeModified {
+		if c.Type != Added && c.Type != Removed && c.Type != Modified {
 			if c.Metadata == nil {
 				c.Metadata = map[string]interface{}{}
 			}

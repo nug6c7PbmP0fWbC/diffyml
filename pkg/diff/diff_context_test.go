@@ -5,88 +5,91 @@ import (
 )
 
 func makeContextChanges() []Change {
-	keys := []string{"a", "b", "c", "d", "e", "f", "g"}
-	out := make([]Change, len(keys))
-	for i, k := range keys {
-		out[i] = Change{Path: k, Type: ChangeAdded, After: i}
+	return []Change{
+		{Path: "a", Type: Unchanged},
+		{Path: "b", Type: Unchanged},
+		{Path: "c", Type: Added},
+		{Path: "d", Type: Unchanged},
+		{Path: "e", Type: Unchanged},
+		{Path: "f", Type: Unchanged},
+		{Path: "g", Type: Modified},
+		{Path: "h", Type: Unchanged},
+		{Path: "i", Type: Unchanged},
 	}
-	// Mark only index 3 as the "real" change; rest become context candidates
-	// For test purposes we'll mix types.
-	out[0].Type = "unchanged"
-	out[1].Type = "unchanged"
-	out[2].Type = "unchanged"
-	// out[3] stays ChangeAdded — the real change
-	out[4].Type = "unchanged"
-	out[5].Type = "unchanged"
-	out[6].Type = "unchanged"
-	return out
 }
 
 func TestWithContext_Empty(t *testing.T) {
-	result := WithContext(nil, DefaultContextOptions())
-	if len(result) != 0 {
-		t.Fatalf("expected empty, got %d", len(result))
+	out := WithContext(nil, DefaultContextOptions())
+	if len(out) != 0 {
+		t.Fatalf("expected empty, got %d", len(out))
 	}
 }
 
 func TestWithContext_NoNeighbours(t *testing.T) {
 	changes := makeContextChanges()
-	opts := ContextOptions{Before: 0, After: 0}
-	result := WithContext(changes, opts)
-	if len(result) != 1 {
-		t.Fatalf("expected 1 change, got %d", len(result))
+	out := WithContext(changes, ContextOptions{Before: 0, After: 0})
+	for _, c := range out {
+		if c.Type != Added && c.Type != Modified {
+			t.Errorf("expected only real changes, got %s at %s", c.Type, c.Path)
+		}
 	}
-	if result[0].Path != "d" {
-		t.Errorf("expected path 'd', got %q", result[0].Path)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 changes, got %d", len(out))
 	}
 }
 
 func TestWithContext_FullWindow(t *testing.T) {
 	changes := makeContextChanges()
-	opts := ContextOptions{Before: 2, After: 2}
-	result := WithContext(changes, opts)
-	// indices 1,2,3,4,5 should be included
-	if len(result) != 5 {
-		t.Fatalf("expected 5 changes, got %d", len(result))
+	out := WithContext(changes, ContextOptions{Before: 2, After: 2})
+	paths := make(map[string]bool)
+	for _, c := range out {
+		paths[c.Path] = true
+	}
+	// "c" (Added) should pull in "a","b" before and "d","e" after
+	for _, p := range []string{"a", "b", "c", "d", "e"} {
+		if !paths[p] {
+			t.Errorf("expected path %q to be included", p)
+		}
+	}
+	// "f" is 3 away from "c" and 1 before "g", so it should appear via "g"
+	if !paths["f"] {
+		t.Errorf("expected path f to be included as context before g")
 	}
 }
 
 func TestWithContext_PreservesOrder(t *testing.T) {
 	changes := makeContextChanges()
-	opts := ContextOptions{Before: 1, After: 1}
-	result := WithContext(changes, opts)
-	for i := 1; i < len(result); i++ {
-		if result[i].Path < result[i-1].Path {
+	out := WithContext(changes, DefaultContextOptions())
+	for i := 1; i < len(out); i++ {
+		if out[i].Path < out[i-1].Path {
 			t.Errorf("order not preserved at index %d", i)
 		}
 	}
 }
 
-func TestWithContext_ContextMetadataSet(t *testing.T) {
+func TestWithContext_ContextMarker(t *testing.T) {
 	changes := makeContextChanges()
-	opts := ContextOptions{Before: 1, After: 1}
-	result := WithContext(changes, opts)
-	for _, c := range result {
-		if c.Type == ChangeAdded || c.Type == ChangeRemoved || c.Type == ChangeModified {
-			if c.Metadata != nil {
-				if _, ok := c.Metadata["context"]; ok {
-					t.Errorf("real change should not have context=true")
-				}
+	out := WithContext(changes, ContextOptions{Before: 1, After: 1})
+	for _, c := range out {
+		if c.Type == Added || c.Type == Removed || c.Type == Modified {
+			if c.Metadata != nil && c.Metadata["context"] == true {
+				t.Errorf("real change %s should not be marked as context", c.Path)
 			}
 		} else {
 			if c.Metadata == nil || c.Metadata["context"] != true {
-				t.Errorf("context change missing metadata for path %q", c.Path)
+				t.Errorf("context change %s should be marked with context=true", c.Path)
 			}
 		}
 	}
 }
 
-func TestWithContext_ClampsBounds(t *testing.T) {
-	changes := makeContextChanges()
-	// Real change is at index 3; request 10 before — should not panic
-	opts := ContextOptions{Before: 10, After: 10}
-	result := WithContext(changes, opts)
-	if len(result) != len(changes) {
-		t.Fatalf("expected all %d changes, got %d", len(changes), len(result))
+func TestWithContext_BoundaryClamp(t *testing.T) {
+	changes := []Change{
+		{Path: "x", Type: Removed},
+		{Path: "y", Type: Unchanged},
+	}
+	out := WithContext(changes, ContextOptions{Before: 5, After: 5})
+	if len(out) != 2 {
+		t.Fatalf("expected 2, got %d", len(out))
 	}
 }
